@@ -1,0 +1,48 @@
+{
+  "name": "candlelab-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "demo": "vite --mode demo --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "build:demo": "tsc -b && vite build --mode demo",
+    "format": "prettier --write src index.html package.json tsconfig.json vite.config.ts vitest.config.ts README.md",
+    "format:check": "prettier --check src index.html package.json tsconfig.json vite.config.ts vitest.config.ts README.md"
+  },
+  "dependencies": {
+    "lightweight-charts": "5.2.0",
+    "msw": "2.7.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "10.4.0",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.2.0",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "22.13.4",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react": "4.3.4",
+    "jsdom": "26.0.0",
+    "prettier": "3.5.0",
+    "typescript": "5.7.3",
+    "undici": "6.21.1",
+    "vite": "6.1.0",
+    "vitest": "3.0.5"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  },
+  "engines": {
+    "node": ">=18.19.0"
+  },
+  "packageManager": "yarn@1.22.22"
+}
