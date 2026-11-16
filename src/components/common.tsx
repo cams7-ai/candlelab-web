@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ApiError } from "../api";
 import type { Dataset } from "../types";
-import { utc } from "../utils";
+import { datasetName, utc } from "../utils";
 export function ErrorNotice({
   error,
   retry,
@@ -48,6 +48,8 @@ export function DatasetCard({
           </h3>
           <p className="big accent">{dataset.candle_count} candles</p>
           <dl>
+            <dt>Nome</dt>
+            <dd>{datasetName(dataset)}</dd>
             <dt>Origem</dt>
             <dd>{dataset.source}</dd>
             <dt>Primeira abertura</dt>

@@ -9,6 +9,7 @@ import {
   makeSeries,
 } from "./fixtures";
 import type { BinanceInput, Candle, Dataset, Run, Session } from "../types";
+import { candleDatasetName } from "../utils";
 interface Store {
   datasets: Dataset[];
   sessions: Session[];
@@ -77,9 +78,18 @@ function storeDataset(
   interval: string,
   data: Candle[],
   source: string,
+  name?: string,
 ) {
   const item: Dataset = {
     id: crypto.randomUUID(),
+    name:
+      name ||
+      candleDatasetName(
+        symbol,
+        interval,
+        data[0].open_time_ms,
+        data.at(-1)!.open_time_ms,
+      ),
     symbol,
     interval,
     source,
@@ -155,7 +165,18 @@ export const handlers = [
       close_time_ms: first + (i + 1) * step - 1,
     }));
     return HttpResponse.json(
-      storeDataset(body.symbol, body.interval, data, "SYNTHETIC"),
+      storeDataset(
+        body.symbol,
+        body.interval,
+        data,
+        "SYNTHETIC",
+        candleDatasetName(
+          body.symbol,
+          body.interval,
+          body.startTime ? Date.parse(body.startTime) : data[0].open_time_ms,
+          body.endTime ? Date.parse(body.endTime) : data.at(-1)!.open_time_ms,
+        ),
+      ),
     );
   }),
   http.post(base + "/datasets", async ({ request }) => {
@@ -193,6 +214,7 @@ export const handlers = [
           String(body.get("interval")),
           data,
           "JSON",
+          file.name,
         ),
       );
     } catch (err) {

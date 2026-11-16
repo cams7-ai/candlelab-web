@@ -519,6 +519,11 @@ dd {
   max-width: 300px;
   font-size: 12px;
 }
+.dataset-name {
+  max-width: 300px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .run-status {
   font-size: 12px;
   color: #a7bfce;

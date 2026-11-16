@@ -3,6 +3,8 @@ import { http, HttpResponse } from "msw";
 import { api, apiBase, allPages, ApiError, request } from "../api";
 import {
   binanceInput,
+  candleDatasetName,
+  datasetName,
   decimal,
   iso,
   parameterValue,
@@ -13,6 +15,22 @@ import { server } from "./setup";
 import { candles, dataset } from "../mocks/fixtures";
 import type { Candle } from "../types";
 describe("fronteira HTTP e decimais", () => {
+  it("gera nome em UTC para conjuntos Binance e mantém nomes salvos", () => {
+    expect(
+      candleDatasetName(
+        "BTCUSDT",
+        "1m",
+        Date.parse("2026-11-13T13:00:00Z"),
+        Date.parse("2026-11-13T18:00:00Z"),
+      ),
+    ).toBe("btcusdt_1m_2026-11-13T1300Z_2026-11-13T1800Z");
+    expect(datasetName({ ...dataset, name: "meu arquivo.json" })).toBe(
+      "meu arquivo.json",
+    );
+    expect(datasetName(dataset)).toBe(
+      "btcusdt_5m_2026-08-19T0000Z_2026-08-19T1455Z",
+    );
+  });
   it.each([
     ["0,1", "0.001"],
     ["0.00000001", "0.0000000001"],

@@ -101,6 +101,7 @@ it("lista todas as páginas de conjuntos carregados e permite selecionar para cr
   const second = {
     ...dataset,
     id: "loaded-eth",
+    name: "eth-candles.json",
     base_asset: "ETH",
     symbol: "ETHUSDT",
     candle_count: 250,
@@ -122,13 +123,71 @@ it("lista todas as páginas de conjuntos carregados e permite selecionar para cr
   await screen.findByRole("table");
   expect(screen.getAllByRole("row")).toHaveLength(3);
   const select = screen.getByRole("button", {
-    name: /Selecionar conjunto ETH/,
+    name: "eth-candles.json",
   });
+  expect(screen.queryByText("loaded-eth")).not.toBeInTheDocument();
+  expect(screen.queryByText(dataset.id)).not.toBeInTheDocument();
   await userEvent.click(select);
   expect(select).toHaveAttribute("aria-pressed", "true");
+  expect(select.closest("tr")).toHaveClass("selected");
   expect(screen.getByText("250 candles")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Criar sessão" }));
   expect(navigate).toHaveBeenCalledWith("/sessions/new?dataset=loaded-eth");
+});
+it("salva o nome do JSON e o exibe na lista de conjuntos carregados", async () => {
+  render(<Acquisition navigate={vi.fn()} />);
+  await screen.findByLabelText("Símbolo *");
+  await userEvent.click(screen.getByRole("tab", { name: "Enviar JSON" }));
+  const rows = [
+    [
+      1787097600000,
+      "1",
+      "2",
+      "1",
+      "2",
+      "1",
+      1787097899999,
+      "2",
+      1,
+      "1",
+      "2",
+      "0",
+    ],
+  ];
+  await userEvent.upload(
+    screen.getByLabelText(/Arquivo JSON/),
+    new File([JSON.stringify(rows)], "meus candles.json", {
+      type: "application/json",
+    }),
+  );
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Importar candles" }).closest("form")!,
+  );
+  await screen.findByText("Importação concluída");
+  expect(screen.getByText("meus candles.json")).toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  await screen.findByRole("button", { name: "meus candles.json" });
+});
+it("nomeia a aquisição Binance com símbolo, intervalo e datas em UTC", async () => {
+  render(<Acquisition navigate={vi.fn()} />);
+  await screen.findByLabelText("Símbolo *");
+  await userEvent.selectOptions(screen.getByLabelText("Intervalo *"), "1m");
+  fireEvent.change(screen.getByLabelText("Início (UTC)"), {
+    target: { value: "2026-11-13T13:00" },
+  });
+  fireEvent.change(screen.getByLabelText("Fim (UTC)"), {
+    target: { value: "2026-11-13T18:00" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Buscar candles" }));
+  await screen.findByText("Dados disponíveis");
+  const name = "btcusdt_1m_2026-11-13T1300Z_2026-11-13T1800Z";
+  expect(screen.getByText(name)).toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  await screen.findByRole("button", { name });
 });
 it("permite tentar novamente ao falhar a listagem e informa quando não há conjuntos", async () => {
   let reads = 0;

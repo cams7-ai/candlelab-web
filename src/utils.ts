@@ -1,4 +1,25 @@
-import type { BinanceInput, ParameterSchema } from "./types";
+import type { BinanceInput, Dataset, ParameterSchema } from "./types";
+export function candleDatasetName(
+  symbol: string,
+  interval: string,
+  start: number,
+  end: number,
+) {
+  const stamp = (ms: number) =>
+    new Date(ms).toISOString().slice(0, 16).replace(":", "") + "Z";
+  return `${symbol.toLowerCase()}_${interval}_${stamp(start)}_${stamp(end)}`;
+}
+export function datasetName(dataset: Dataset) {
+  return (
+    dataset.name ||
+    candleDatasetName(
+      dataset.symbol,
+      dataset.interval,
+      dataset.first_open_time_ms,
+      dataset.last_open_time_ms,
+    )
+  );
+}
 export function decimal(value: string) {
   const normalized = value.trim().replace(",", ".");
   if (!/^\d+(\.\d+)?$/.test(normalized))

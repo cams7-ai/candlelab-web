@@ -11,6 +11,7 @@ export interface Instrument {
 }
 export interface Dataset {
   id: string;
+  name?: string;
   source: string;
   symbol: string;
   interval: string;

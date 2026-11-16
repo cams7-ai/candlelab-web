@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { allPages, api, request } from "../api";
 import { useQuery } from "../hooks";
 import type { Dataset, Instrument } from "../types";
-import { binanceInput, utc } from "../utils";
+import { binanceInput, datasetName, utc } from "../utils";
 import { DatasetCard, Empty, ErrorNotice, Loading } from "./common";
 function LoadedDatasets({
   selectedId,
@@ -30,19 +30,28 @@ function LoadedDatasets({
         <table>
           <thead>
             <tr>
+              <th>Nome</th>
               <th>Par / intervalo</th>
               <th>Candles</th>
               <th>Período (UTC)</th>
               <th>Origem</th>
-              <th>Ação</th>
             </tr>
           </thead>
           <tbody>
             {query.data.map((d) => (
               <tr key={d.id} className={selectedId === d.id ? "selected" : ""}>
                 <td>
+                  <button
+                    type="button"
+                    className="text-button dataset-name"
+                    aria-pressed={selectedId === d.id}
+                    onClick={() => onSelect(d)}
+                  >
+                    {datasetName(d)}
+                  </button>
+                </td>
+                <td>
                   {d.base_asset}/{d.quote_asset} · {d.interval}
-                  <small>{d.id}</small>
                 </td>
                 <td>{d.candle_count}</td>
                 <td>
@@ -51,16 +60,6 @@ function LoadedDatasets({
                   {utc(d.last_open_time_ms)}
                 </td>
                 <td>{d.source}</td>
-                <td>
-                  <button
-                    type="button"
-                    aria-pressed={selectedId === d.id}
-                    aria-label={`Selecionar conjunto ${d.base_asset}/${d.quote_asset} ${d.interval} ${d.id}`}
-                    onClick={() => onSelect(d)}
-                  >
-                    {selectedId === d.id ? "Selecionado" : "Selecionar"}
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>
