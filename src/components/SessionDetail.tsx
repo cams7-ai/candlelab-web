@@ -366,7 +366,11 @@ export function SessionDetail({
                     {Object.entries(run.parameters).map(([k, v]) => (
                       <div className="metric" key={k}>
                         <dt>{labels[k] ?? k}</dt>
-                        <dd>{format(v)}</dd>
+                        <dd>
+                          {k === "auxiliary_json"
+                            ? `${JSON.parse(String(v)).length} observações importadas`
+                            : format(v)}
+                        </dd>
                       </div>
                     ))}
                   </dl>
@@ -378,6 +382,14 @@ export function SessionDetail({
           )}
         </aside>
       </div>
+      {run?.strategy_id === "PAIRS_TRADING@1" && (
+        <p className="panel muted">
+          Carteira simulada com BTC comprado e dívida em ETH. O caixa inclui o
+          valor bloqueado da venda de ETH; a posição final e o patrimônio
+          consideram as duas pernas. As quantidades de cada ativo aparecem nos
+          indicadores e no histórico.
+        </p>
+      )}
       <section className="panel">
         <h2>Comparar processamentos</h2>
         <div className="table-wrap">
@@ -411,7 +423,10 @@ export function SessionDetail({
                     </td>
                     <td className="parameters-cell">
                       {Object.entries(r.parameters)
-                        .map(([k, v]) => `${labels[k] ?? k}: ${format(v)}`)
+                        .map(
+                          ([k, v]) =>
+                            `${labels[k] ?? k}: ${k === "auxiliary_json" ? "snapshot JSON importado" : format(v)}`,
+                        )
                         .join(" · ")}
                     </td>
                     <td>{format(r.summary!.final_equity)} USDT</td>
@@ -467,7 +482,9 @@ export function SessionDetail({
                     <td>{utc(e.open_time_ms)}</td>
                     <td>{utc(e.occurred_at_ms)}</td>
                     <td>{format(e.price)}</td>
-                    <td>{format(e.quantity)}</td>
+                    <td>
+                      {format(e.quantity)} {e.asset ?? ""}
+                    </td>
                     <td>
                       {e.signal_id} {e.reason}
                     </td>

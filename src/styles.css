@@ -686,3 +686,15 @@ small {
     font-size: 10px;
   }
 }
+
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0c1a24;
+  color: #d5e2eb;
+  border: 1px solid #36505e;
+  border-radius: 6px;
+  padding: 10px;
+  font: inherit;
+  resize: vertical;
+}

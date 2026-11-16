@@ -1,4 +1,4 @@
-# CandleLab Web
+# CandleLab Web 0.2.0
 
 Interface em português para um laboratório local de backtest histórico Binance Spot, feita com React, TypeScript, Vite e **lightweight-charts 5.2.0** (versão fixada no manifesto e em `yarn.lock`). Consome o contrato HTTP v1 descrito em [docs/prompt_261114.md](docs/prompt_261114.md).
 
@@ -24,7 +24,7 @@ yarn demo
 
 O modo `demo` ativa explicitamente o MSW, que intercepta as chamadas HTTP do mesmo cliente usado em produção. Exige navegador com Service Worker (localhost ou HTTPS). O banner identifica os dados sintéticos. Nenhuma chamada Binance real é realizada. Os mocks só são carregados com `VITE_DEMO_MODE=true`, definido em `.env.demo`.
 
-Há uma sessão com 180 candles sintéticos e dois resultados ilustrativos (SMA + RSI e EMA). As estratégias iniciais SMA, EMA, RSI e SMA + RSI vêm do catálogo HTTP simulado. A demonstração permite buscar dados sintéticos, importar JSON, criar sessões e acompanhar um novo processamento de `queued`/`running` até `completed`. Novos processamentos retornam um resumo neutro e séries ilustrativas; o mock **não implementa um motor financeiro** nem avalia a rentabilidade dos parâmetros escolhidos. As duas execuções de exemplo contêm sinais e fills ilustrativos para conferir a apresentação.
+Há uma sessão com 180 candles sintéticos e dois resultados ilustrativos (SMA + RSI e EMA). As quatro estratégias legadas e as 18 do tutorial vêm do catálogo HTTP simulado. A demonstração permite buscar dados sintéticos, importar JSON, criar sessões e acompanhar um novo processamento de `queued`/`running` até `completed`. Novos processamentos retornam um resumo neutro e séries ilustrativas; o mock **não implementa um motor financeiro** nem avalia a rentabilidade dos parâmetros escolhidos. As duas execuções de exemplo contêm sinais e fills ilustrativos para conferir a apresentação.
 
 Os dados criados no modo demo persistem no `localStorage`, sob a chave `candlelab-demo-v1`. Para reiniciar a amostra, apague essa chave nas ferramentas do navegador e recarregue. Para testar o envio de JSON, selecione [public/candles-sinteticos.json](public/candles-sinteticos.json), com 40 candles e os 12 campos Binance originais.
 
@@ -68,7 +68,7 @@ O gráfico utiliza `chart.addSeries(CandlestickSeries, ...)` e `createSeriesMark
 
 As páginas de candles, indicadores, eventos e patrimônio são integralmente percorridas; duplicatas são removidas por timestamp ou ID antes da ordenação. Aquecimento `null` vira dado ausente, sem preencher valores. Na troca de processamento, as séries anteriores e seus marcadores são removidos. Requisições e polling usam `AbortController`; estados terminais encerram o acompanhamento. Falhas de consulta oferecem retentativa.
 
-Novas estratégias com parâmetros numéricos dos tipos `integer`, `number` e `string` decimal aparecem a partir do catálogo sem alteração no frontend. Indicadores adicionais são renderizados por suas chaves; chaves contendo `volume` usam histogramas em painel separado. Canais como Donchian podem usar séries de preço. Tipos futuros de parâmetro ou indicadores com outras escalas exigirão uma extensão explícita do contrato e do renderizador. Nenhuma estratégia futura é anunciada antes de aparecer na API.
+O campo `auxiliary_json` permite importar/editar observações JSON de estratégias com dados adicionais. O campo `auxiliary_json` permite importar/editar observações JSON de estratégias com dados adicionais. Novas estratégias com parâmetros numéricos dos tipos `integer`, `number` e `string` decimal aparecem a partir do catálogo sem alteração no frontend. Indicadores adicionais são renderizados por suas chaves; chaves contendo `volume` usam histogramas em painel separado. Canais como Donchian podem usar séries de preço. Tipos futuros de parâmetro ou indicadores com outras escalas exigirão uma extensão explícita do contrato e do renderizador. Nenhuma estratégia futura é anunciada antes de aparecer na API.
 
 ## Referências visuais
 
@@ -103,3 +103,15 @@ Pendências de integração: a API real e o arquivo `candles-btcusdt-spot-5m_202
 ## Atribuição
 
 [TradingView Lightweight Charts™](https://www.tradingview.com/) é distribuído sob Apache 2.0. O aviso e a licença completos acompanham o build em `public/THIRD_PARTY_NOTICES.txt` e `public/LICENSE-lightweight-charts.txt`. O logo de atribuição do gráfico permanece habilitado.
+
+## Versão 0.2.0
+
+O [prompt desta versão](docs/prompt_261116_v0.2.0.md) foi criado antes das alterações e executado neste projeto. Consulte o [guia de estratégias e importação](docs/estrategias_v0.2.0.md) para as 18 novas opções, regras, padrões e hipóteses de execução. As quatro opções anteriores permanecem disponíveis. A entrada auxiliar é importada por processamento, com snapshot persistido e validação de cobertura temporal; não há dados externos fabricados automaticamente. Suporte adicional a candles de 1 hora.
+
+Veja os [resultados de validação 0.2.0](docs/validacao_v0.2.0.md).
+
+## Versão 0.2.0
+
+O [prompt desta versão](docs/prompt_261116_v0.2.0.md) foi criado antes das alterações e executado neste projeto. Consulte o [guia de estratégias e importação](docs/estrategias_v0.2.0.md) para as 18 novas opções, regras, padrões e hipóteses de execução. As quatro opções anteriores permanecem disponíveis. A entrada auxiliar é importada por processamento, com snapshot persistido e validação de cobertura temporal; não há dados externos fabricados automaticamente. Suporte adicional a candles de 1 hora.
+
+Veja os [resultados de validação 0.2.0](docs/validacao_v0.2.0.md).

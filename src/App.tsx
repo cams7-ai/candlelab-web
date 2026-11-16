@@ -47,7 +47,7 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true">
             ╽╿╽
           </span>
-          CandleLab Web
+          CandleLab Web · 0.2.0
         </a>
         <nav aria-label="Navegação principal">
           <a

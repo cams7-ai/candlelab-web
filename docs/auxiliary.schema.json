@@ -1,0 +1,213 @@
+{
+  "type": "array",
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "open_time_ms": {
+        "minimum": 0,
+        "title": "Open Time Ms",
+        "type": "integer"
+      },
+      "bid": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Bid"
+      },
+      "ask": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Ask"
+      },
+      "bid_b": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Bid B"
+      },
+      "ask_b": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Ask B"
+      },
+      "capacity_base": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Capacity Base"
+      },
+      "maker_buy_filled": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Maker Buy Filled"
+      },
+      "maker_sell_filled": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Maker Sell Filled"
+      },
+      "flow": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Flow"
+      },
+      "eth_price": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Eth Price"
+      },
+      "eth_close": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Eth Close"
+      },
+      "probability": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Probability"
+      },
+      "trained_until_ms": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Trained Until Ms"
+      },
+      "model_id": {
+        "anyOf": [
+          {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Model Id"
+      },
+      "universe": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/AssetObservation"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Universe"
+      }
+    },
+    "required": [
+      "open_time_ms"
+    ],
+    "title": "AuxiliaryRow",
+    "type": "object"
+  },
+  "$defs": {
+    "AssetObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "roc": {
+          "title": "Roc",
+          "type": "string"
+        },
+        "liquidity": {
+          "title": "Liquidity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "roc",
+        "liquidity"
+      ],
+      "title": "AssetObservation",
+      "type": "object"
+    }
+  }
+}

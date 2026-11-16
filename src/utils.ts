@@ -64,6 +64,19 @@ export function binanceInput(
   return input;
 }
 export function parameterValue(value: string, schema: ParameterSchema) {
+  if (schema.contentMediaType === "application/json") {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error("Dados auxiliares: JSON inválido.");
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0)
+      throw new Error(
+        "Importe uma lista JSON não vazia de observações auxiliares.",
+      );
+    return value;
+  }
   const normalized = value.trim().replace(",", ".");
   if (!/^-?\d+(\.\d+)?$/.test(normalized))
     throw new Error("Informe um parâmetro numérico válido.");
@@ -75,6 +88,11 @@ export function parameterValue(value: string, schema: ParameterSchema) {
     (schema.maximum != null && number > schema.maximum) ||
     (schema.exclusiveMinimum != null && number <= schema.exclusiveMinimum) ||
     (schema.exclusiveMaximum != null && number >= schema.exclusiveMaximum)
+  )
+    throw new Error("Parâmetro fora dos limites do catálogo.");
+  if (
+    (schema["x-min"] != null && number < Number(schema["x-min"])) ||
+    (schema["x-max"] != null && number > Number(schema["x-max"]))
   )
     throw new Error("Parâmetro fora dos limites do catálogo.");
   if (schema.pattern && !new RegExp(schema.pattern).test(normalized))

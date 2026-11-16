@@ -1,3 +1,4 @@
+import { tutorialCatalog } from "./tutorialCatalog";
 import type {
   Candle,
   Dataset,
@@ -109,6 +110,7 @@ export const strategies: Strategy[] = [
       rsi_confirmation_min: "50",
     },
   },
+  ...tutorialCatalog,
 ];
 export const summary: Summary = {
   initial_cash: "1000.00",

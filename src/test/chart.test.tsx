@@ -75,3 +75,18 @@ it("usa painel RSI de 0 a 100, limiar efetivo, lacunas e limpa o gráfico", () =
   view.unmount();
   expect(mocks.chart.remove).toHaveBeenCalledTimes(2);
 });
+
+it("mantém fills ETH no histórico sem plotá-los na escala de BTC", () => {
+  const events = [
+    {
+      id: "eth",
+      seq: 1,
+      kind: "fill" as const,
+      side: "SELL" as const,
+      asset: "ETH",
+      open_time_ms: 1787097600000,
+      occurred_at_ms: 1787097600000,
+    },
+  ];
+  expect(markersFor(events, true, true)).toEqual([]);
+});

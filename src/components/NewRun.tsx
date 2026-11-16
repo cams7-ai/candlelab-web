@@ -30,11 +30,19 @@ export function NewRun({
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
   const active = useRef<AbortController>();
+  const importRevision = useRef(0);
   useEffect(() => () => active.current?.abort(), []);
   const strategy =
     query.data?.strategies.find((s) => s.id === strategyId) ??
     query.data?.strategies[0];
+  useEffect(
+    () => () => {
+      importRevision.current += 1;
+    },
+    [],
+  );
   function change(id: string) {
+    importRevision.current += 1;
     setStrategyId(id);
     setValues({});
     setError(undefined);
@@ -109,29 +117,121 @@ export function NewRun({
               {!strategy && (
                 <Empty>Nenhuma estratégia publicada no catálogo.</Empty>
               )}
+              {strategy && (
+                <section aria-label="Regras da estratégia">
+                  <p>
+                    <strong>
+                      {strategy.category === "combination"
+                        ? "Combinação"
+                        : strategy.category === "individual"
+                          ? "Individual"
+                          : "Legada"}
+                    </strong>{" "}
+                    · {strategy.rules}
+                  </p>
+                  {strategy.limitations && (
+                    <p className="muted">{strategy.limitations}</p>
+                  )}
+                  {!!strategy.required_data?.length && (
+                    <p>
+                      Dados auxiliares obrigatórios:{" "}
+                      <code>{strategy.required_data.join(", ")}</code>. Uma
+                      observação por <code>open_time_ms</code> do dataset, sem
+                      lacunas. Preços e valores decimais como strings;
+                      timestamps em milissegundos UTC. Quotes e previsões
+                      representam o instante de abertura indicado.
+                    </p>
+                  )}
+                </section>
+              )}
+              {!!strategy?.required_data?.length && (
+                <p className="muted">
+                  <a href="/auxiliares-sinteticos.json" download>
+                    Baixar exemplo auxiliar sintético
+                  </a>{" "}
+                  (somente para os 40 candles do arquivo
+                  candles-sinteticos.json; adapte aos timestamps do seu
+                  dataset).
+                </p>
+              )}
               <div className="field-grid">
                 {strategy &&
                   Object.entries(strategy.parameters_schema.properties).map(
                     ([key, schema]) => (
                       <label key={key}>
                         {schema.title ?? labels[key] ?? key}
-                        <input
-                          required
-                          inputMode={
-                            schema.type === "integer" ? "numeric" : "decimal"
-                          }
-                          value={
-                            values[key] ??
-                            String(
-                              strategy.defaults[key] ?? schema.default ?? "",
-                            )
-                          }
-                          onChange={(e) =>
-                            setValues({ ...values, [key]: e.target.value })
-                          }
-                        />
+                        {schema.contentMediaType === "application/json" ? (
+                          <>
+                            <input
+                              type="file"
+                              accept=".json,application/json"
+                              aria-label="Importar dados auxiliares JSON"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                try {
+                                  if (file.size > 8 * 1024 * 1024)
+                                    throw new Error(
+                                      "Arquivo auxiliar excede 8 MiB.",
+                                    );
+                                  const revision = importRevision.current;
+                                  const raw = await file.text();
+                                  if (revision !== importRevision.current)
+                                    return;
+                                  parameterValue(raw, schema);
+                                  setValues((previous) => ({
+                                    ...previous,
+                                    [key]: raw,
+                                  }));
+                                  setError(undefined);
+                                } catch (err) {
+                                  setError(err);
+                                }
+                              }}
+                            />
+                            <textarea
+                              required
+                              aria-label="Dados auxiliares JSON"
+                              rows={8}
+                              value={
+                                values[key] ??
+                                String(strategy.defaults[key] ?? "[]")
+                              }
+                              onChange={(e) =>
+                                setValues({ ...values, [key]: e.target.value })
+                              }
+                            />
+                          </>
+                        ) : (
+                          <input
+                            required
+                            inputMode={
+                              schema.type === "integer" ? "numeric" : "decimal"
+                            }
+                            value={
+                              values[key] ??
+                              String(
+                                strategy.defaults[key] ?? schema.default ?? "",
+                              )
+                            }
+                            onChange={(e) =>
+                              setValues({ ...values, [key]: e.target.value })
+                            }
+                          />
+                        )}
                         <small className="muted">
-                          {schema.type === "integer" ? "Inteiro" : "Decimal"}
+                          {schema.contentMediaType === "application/json"
+                            ? "Lista JSON · snapshot persistido no processamento"
+                            : schema.type === "integer"
+                              ? "Inteiro"
+                              : "Decimal"}
+                          {schema.description ? ` · ${schema.description}` : ""}
+                          {schema["x-min"] != null
+                            ? ` · mínimo ${schema["x-min"]}`
+                            : ""}
+                          {schema["x-max"] != null
+                            ? ` · máximo ${schema["x-max"]}`
+                            : ""}
                           {schema.minimum != null
                             ? ` · mínimo ${schema.minimum}`
                             : ""}
@@ -173,6 +273,9 @@ export function NewRun({
               </dl>
               <p className="muted">
                 Cada processamento começa com o caixa inicial da sessão.
+                Simulações incluem taxas da sessão; stops são observados no
+                fechamento. Dados sintéticos do tutorial são exemplos didáticos
+                e não garantem rentabilidade.
               </p>
             </aside>
           </div>

@@ -103,13 +103,13 @@ export const handlers = [
           symbol: "BTCUSDT",
           base_asset: "BTC",
           quote_asset: "USDT",
-          intervals: ["5m", "1m", "15m", "1h", "1d"],
+          intervals: ["5m", "1m", "1h"],
         },
         {
           symbol: "ETHUSDT",
           base_asset: "ETH",
           quote_asset: "USDT",
-          intervals: ["5m", "1m", "15m", "1h", "1d"],
+          intervals: ["5m", "1m", "1h"],
         },
       ],
     }),
@@ -241,6 +241,29 @@ export const handlers = [
     >;
     if (!strategies.some((s) => s.id === body.strategy_id))
       return error(422, "Estratégia inexistente.", { field: "strategy_id" });
+    const strategy = strategies.find((s) => s.id === body.strategy_id)!;
+    if (strategy.required_data?.length) {
+      try {
+        const rows = JSON.parse(String(body.parameters.auxiliary_json));
+        const sess = store.sessions.find((s) => s.id === params.id)!;
+        const data = store.candles[sess.dataset_id];
+        if (
+          !Array.isArray(rows) ||
+          rows.length !== data.length ||
+          rows.some(
+            (row, index) =>
+              row.open_time_ms !== data[index].open_time_ms ||
+              strategy.required_data!.some((key) => row[key] == null),
+          )
+        )
+          return error(
+            422,
+            "Dados auxiliares incompletos: importe uma observação por candle e todos os campos exigidos.",
+          );
+      } catch {
+        return error(422, "Dados auxiliares: JSON inválido.");
+      }
+    }
     const run: Run = {
       ...body,
       id: crypto.randomUUID(),

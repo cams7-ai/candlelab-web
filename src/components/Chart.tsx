@@ -19,6 +19,7 @@ export function markersFor(
   fills: boolean,
 ): SeriesMarker<Time>[] {
   return events
+    .filter((e) => e.asset !== "ETH")
     .filter((e) =>
       e.kind === "signal" ? signals : e.kind === "fill" ? fills : false,
     )
@@ -103,11 +104,21 @@ export function Chart({
       new Set(indicators.flatMap((i) => Object.keys(i.values))),
     );
     let pane = 1;
+    const groups = new Map<string, number>();
     keys.forEach((key, index) => {
-      const separate = key === "rsi" || /volume/i.test(key);
+      const separate =
+        /^(rsi|roc|adx|atr|macd|macd_signal|spread_bps|edge_bps|flow|zscore|probability|rank|btc_position|eth_short_position|eth_price)$/.test(
+          key,
+        ) || /volume/i.test(key);
       let paneIndex = 0;
       if (separate) {
-        paneIndex = pane++;
+        const group = key.startsWith("macd")
+          ? "macd"
+          : key.endsWith("position")
+            ? "positions"
+            : key;
+        if (!groups.has(group)) groups.set(group, pane++);
+        paneIndex = groups.get(group)!;
       }
       const options = {
         color: palette[index % palette.length],
@@ -144,7 +155,14 @@ export function Chart({
             .priceScale("right", paneIndex)
             .applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
         if (key === "rsi" && run) {
-          ["oversold", "overbought", "rsi_confirmation_min"].forEach((k) => {
+          [
+            "oversold",
+            "overbought",
+            "rsi_confirmation_min",
+            "recovery",
+            "rsi_min",
+            "rsi_max",
+          ].forEach((k) => {
             if (run.parameters[k] != null)
               series.createPriceLine({
                 price: Number(run.parameters[k]),

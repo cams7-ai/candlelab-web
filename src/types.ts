@@ -38,6 +38,11 @@ export interface Session {
   fee_rate: Decimal;
 }
 export interface ParameterSchema {
+  description?: string;
+  contentMediaType?: string;
+  "x-min"?: string;
+  "x-max"?: string;
+  maxLength?: number;
   type: "integer" | "number" | "string";
   title?: string;
   minimum?: number;
@@ -48,9 +53,15 @@ export interface ParameterSchema {
   pattern?: string;
 }
 export interface Strategy {
+  category?: "legacy" | "individual" | "combination";
+  rules?: string;
+  limitations?: string;
+  required_data?: string[];
   id: string;
   name: string;
   parameters_schema: {
+    title?: string;
+    additionalProperties?: boolean;
     type?: string;
     properties: Record<string, ParameterSchema>;
     required?: string[];
@@ -101,6 +112,7 @@ export interface TradeEvent {
   side: "BUY" | "SELL";
   open_time_ms: number;
   occurred_at_ms: number;
+  asset?: string | null;
   signal_id?: string;
   price?: Decimal;
   quantity?: Decimal;
