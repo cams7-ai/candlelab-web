@@ -14,8 +14,17 @@ import { Acquisition } from "../components/Acquisition";
 import { NewSession } from "../components/Sessions";
 import { NewRun } from "../components/NewRun";
 import { SessionDetail } from "../components/SessionDetail";
-import { dataset, runs, session, strategies } from "../mocks/fixtures";
+import {
+  candles,
+  dataset,
+  makeSeries,
+  runs,
+  session,
+  strategies,
+} from "../mocks/fixtures";
+import { downloadRunPdf } from "../runPdf";
 import { server } from "./setup";
+vi.mock("../runPdf", () => ({ downloadRunPdf: vi.fn() }));
 vi.mock("../components/Chart", () => ({
   Chart: (props: { run?: { id: string }; indicators: unknown[] }) => (
     <div data-testid="chart">
@@ -344,6 +353,85 @@ it("mantém o novo resultado na comparação ao selecionar outro processamento",
     expect(screen.getByTestId("chart")).toHaveTextContent(pending.id),
   );
   expect(within(comparison).getAllByRole("row")).toHaveLength(3);
+});
+it("exporta o processamento da linha sem alterar a seleção e carrega todas as páginas", async () => {
+  vi.mocked(downloadRunPdf).mockClear();
+  const data = makeSeries(runs[1], candles);
+  const kinds: string[] = [];
+  server.use(
+    http.get(apiBase + `/runs/${runs[1].id}/series`, ({ request }) => {
+      const url = new URL(request.url);
+      const kind = url.searchParams.get("kind")!;
+      kinds.push(kind);
+      return HttpResponse.json(
+        kind === "events"
+          ? url.searchParams.has("cursor")
+            ? { items: data.events.slice(1), next_cursor: null }
+            : { items: data.events.slice(0, 1), next_cursor: "next" }
+          : { items: data.equity, next_cursor: null },
+      );
+    }),
+  );
+  render(
+    <SessionDetail id={session.id} runId={runs[0].id} navigate={vi.fn()} />,
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("chart")).toHaveTextContent(runs[0].id),
+  );
+  const comparison = screen.getByRole("heading", {
+    name: "Comparar processamentos",
+  }).parentElement!;
+  const row = within(comparison)
+    .getByRole("button", { name: new RegExp(runs[1].id) })
+    .closest("tr")!;
+  await userEvent.click(
+    within(row).getByRole("button", { name: "Exportar PDF" }),
+  );
+  await waitFor(() => expect(downloadRunPdf).toHaveBeenCalledOnce());
+  expect(downloadRunPdf).toHaveBeenCalledWith(
+    expect.objectContaining({
+      run: runs[1],
+      candles,
+      events: data.events,
+      equity: data.equity,
+      session: expect.objectContaining({ id: session.id }),
+    }),
+  );
+  expect(kinds.filter((kind) => kind === "events")).toHaveLength(2);
+  expect(screen.getByTestId("chart")).toHaveTextContent(runs[0].id);
+});
+it("mostra falhas na exportação e permite tentar novamente", async () => {
+  vi.mocked(downloadRunPdf).mockClear();
+  server.use(
+    http.get(apiBase + `/runs/${runs[1].id}/series`, () =>
+      HttpResponse.json(
+        {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Falha ao carregar relatório",
+            details: null,
+          },
+        },
+        { status: 503 },
+      ),
+    ),
+  );
+  render(
+    <SessionDetail id={session.id} runId={runs[0].id} navigate={vi.fn()} />,
+  );
+  const comparison = (
+    await screen.findByRole("heading", { name: "Comparar processamentos" })
+  ).parentElement!;
+  const row = within(comparison)
+    .getByRole("button", { name: new RegExp(runs[1].id) })
+    .closest("tr")!;
+  const button = within(row).getByRole("button", { name: "Exportar PDF" });
+  await userEvent.click(button);
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Falha ao carregar relatório",
+  );
+  expect(button).toBeEnabled();
+  expect(downloadRunPdf).not.toHaveBeenCalled();
 });
 it("acompanha queued e running até completed e termina o polling", async () => {
   let reads = 0;

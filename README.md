@@ -2,6 +2,16 @@
 
 Interface em português para um laboratório local de backtest histórico Binance Spot, feita com React, TypeScript, Vite e **lightweight-charts 5.2.0** (versão fixada no manifesto e em `yarn.lock`). Consome o contrato HTTP v1 descrito em [docs/prompt_261114.md](docs/prompt_261114.md).
 
+## Exportar processamento
+
+No detalhe da sessão, cada processamento concluído em **Comparar processamentos**
+oferece **Exportar PDF**. O download contém identificação da sessão e do conjunto,
+resumo financeiro, parâmetros, gráfico de candles com compras e vendas executadas,
+curva de patrimônio e histórico de sinais e execuções. O gráfico usa uma visão
+limpa do período completo e agrupa históricos longos em até 160 barras OHLC,
+indicando a agregação no relatório. Os valores das tabelas mantêm a precisão
+recebida da API. A exportação usa os dados da linha escolhida e funciona no navegador.
+
 ## Executar
 
 Requisitos: Node.js 18.19 ou superior e Yarn Classic 1.22.22. Para novas instalações, prefira uma versão LTS mantida do Node.

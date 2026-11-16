@@ -14,6 +14,7 @@ import type {
 } from "../types";
 import { format, labels, utc } from "../utils";
 import { Chart } from "./Chart";
+import { summaryLabels, summaryOrder } from "../financialSummary";
 import { Empty, ErrorNotice, Loading } from "./common";
 const statusLabels = {
   queued: "Na fila",
@@ -21,40 +22,6 @@ const statusLabels = {
   completed: "Concluído",
   failed: "Falhou",
 };
-export const summaryLabels: Record<keyof Summary, string> = {
-  initial_cash: "Caixa inicial",
-  final_cash: "Caixa final",
-  final_position_qty: "Quantidade em posição",
-  final_position_value: "Valor da posição",
-  initial_equity: "Patrimônio inicial",
-  final_equity: "Patrimônio final",
-  total_fees: "Taxas",
-  realized_pnl: "P&L realizado",
-  unrealized_pnl: "P&L não realizado",
-  return_pct: "Retorno",
-  buy_fills: "Compras executadas",
-  sell_fills: "Vendas executadas",
-  closed_trades: "Trades encerrados",
-  win_rate_pct: "Acerto",
-  max_drawdown_pct: "Drawdown máximo",
-};
-const summaryOrder: (keyof Summary)[] = [
-  "final_equity",
-  "return_pct",
-  "total_fees",
-  "realized_pnl",
-  "unrealized_pnl",
-  "max_drawdown_pct",
-  "final_cash",
-  "final_position_qty",
-  "final_position_value",
-  "buy_fills",
-  "sell_fills",
-  "closed_trades",
-  "win_rate_pct",
-  "initial_cash",
-  "initial_equity",
-];
 export function FinancialSummary({ summary }: { summary: Summary }) {
   return (
     <dl>
@@ -149,7 +116,54 @@ export function SessionDetail({
   const [signals, setSignals] = useState(true);
   const [fills, setFills] = useState(true);
   const [showParameters, setShowParameters] = useState(true);
+  const [exportingId, setExportingId] = useState<string>();
+  const [exportError, setExportError] = useState<unknown>();
+  const exportController = useRef<AbortController>();
   const selector = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    setExportingId(undefined);
+    setExportError(undefined);
+    return () => exportController.current?.abort();
+  }, [id]);
+  async function exportPdf(result: Run) {
+    if (!query.data || exportingId) return;
+    const { session, dataset, candles } = query.data;
+    const controller = new AbortController();
+    exportController.current = controller;
+    setExportingId(result.id);
+    setExportError(undefined);
+    try {
+      const path = `/runs/${resource(result.id)}/series`;
+      const [events, equity, { downloadRunPdf }] = await Promise.all([
+        allPages<TradeEvent>(
+          path + "?kind=events",
+          controller.signal,
+          (event) => event.id,
+        ),
+        allPages<Equity>(path + "?kind=equity", controller.signal, (point) =>
+          String(point.open_time_ms),
+        ),
+        import("../runPdf"),
+      ]);
+      if (!controller.signal.aborted)
+        downloadRunPdf({
+          session,
+          dataset,
+          candles,
+          run: result,
+          events,
+          equity,
+          strategyName:
+            query.data.strategies.find(
+              (strategy) => strategy.id === result.strategy_id,
+            )?.name ?? result.strategy_id,
+        });
+    } catch (error) {
+      if (!controller.signal.aborted) setExportError(error);
+    } finally {
+      if (!controller.signal.aborted) setExportingId(undefined);
+    }
+  }
   useEffect(() => {
     setRun(undefined);
     setPollError(undefined);
@@ -398,6 +412,7 @@ export function SessionDetail({
       )}
       <section className="panel">
         <h2>Comparar processamentos</h2>
+        {exportError != null && <ErrorNotice error={exportError} />}
         <div className="table-wrap">
           <table>
             <thead>
@@ -408,6 +423,7 @@ export function SessionDetail({
                 <th>Retorno</th>
                 <th>Taxas</th>
                 <th>Drawdown</th>
+                <th>Relatório</th>
               </tr>
             </thead>
             <tbody>
@@ -439,6 +455,15 @@ export function SessionDetail({
                     <td>{format(r.summary!.return_pct)}%</td>
                     <td>{format(r.summary!.total_fees)} USDT</td>
                     <td>{format(r.summary!.max_drawdown_pct)}%</td>
+                    <td>
+                      <button
+                        type="button"
+                        disabled={exportingId != null}
+                        onClick={() => void exportPdf(r)}
+                      >
+                        {exportingId === r.id ? "Gerando PDF…" : "Exportar PDF"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
             </tbody>
