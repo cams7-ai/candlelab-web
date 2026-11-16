@@ -91,6 +91,78 @@ it("consulta mínima apresenta conjunto e ação de criar sessão", async () => 
   await screen.findByText("Dados disponíveis");
   expect(screen.getByText("500 candles")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Criar sessão" })).toBeEnabled();
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  await screen.findByRole("table");
+  expect(screen.getAllByRole("row")).toHaveLength(3);
+});
+it("lista todas as páginas de conjuntos carregados e permite selecionar para criar sessão", async () => {
+  const second = {
+    ...dataset,
+    id: "loaded-eth",
+    base_asset: "ETH",
+    symbol: "ETHUSDT",
+    candle_count: 250,
+  };
+  server.use(
+    http.get(apiBase + "/datasets", ({ request }) =>
+      HttpResponse.json(
+        new URL(request.url).searchParams.has("cursor")
+          ? { items: [second], next_cursor: null }
+          : { items: [dataset], next_cursor: "next" },
+      ),
+    ),
+  );
+  const navigate = vi.fn();
+  render(<Acquisition navigate={navigate} />);
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  await screen.findByRole("table");
+  expect(screen.getAllByRole("row")).toHaveLength(3);
+  const select = screen.getByRole("button", {
+    name: /Selecionar conjunto ETH/,
+  });
+  await userEvent.click(select);
+  expect(select).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText("250 candles")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Criar sessão" }));
+  expect(navigate).toHaveBeenCalledWith("/sessions/new?dataset=loaded-eth");
+});
+it("permite tentar novamente ao falhar a listagem e informa quando não há conjuntos", async () => {
+  let reads = 0;
+  server.use(
+    http.get(apiBase + "/datasets", () => {
+      reads++;
+      return reads === 1
+        ? HttpResponse.json(
+            {
+              error: {
+                code: "UNAVAILABLE",
+                message: "Falha na listagem",
+                details: null,
+              },
+            },
+            { status: 503 },
+          )
+        : HttpResponse.json({ items: [], next_cursor: null });
+    }),
+  );
+  render(<Acquisition navigate={vi.fn()} />);
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Falha na listagem",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Tentar novamente" }),
+  );
+  await screen.findByText(/Nenhum conjunto carregado/);
+  expect(
+    screen.queryByRole("button", { name: "Criar sessão" }),
+  ).not.toBeInTheDocument();
 });
 it("carrega estratégias novas e parâmetros a partir do catálogo HTTP", async () => {
   let sent: unknown;

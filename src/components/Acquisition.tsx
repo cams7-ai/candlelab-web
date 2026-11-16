@@ -1,9 +1,74 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, request } from "../api";
+import { allPages, api, request } from "../api";
 import { useQuery } from "../hooks";
 import type { Dataset, Instrument } from "../types";
-import { binanceInput } from "../utils";
-import { DatasetCard, ErrorNotice, Loading } from "./common";
+import { binanceInput, utc } from "../utils";
+import { DatasetCard, Empty, ErrorNotice, Loading } from "./common";
+function LoadedDatasets({
+  selectedId,
+  onSelect,
+}: {
+  selectedId?: string;
+  onSelect: (dataset: Dataset) => void;
+}) {
+  const query = useQuery(
+    (signal) => allPages<Dataset>("/datasets", signal, (d) => d.id),
+    [],
+  );
+  return (
+    <section className="panel table-wrap">
+      <h2>Candles carregados</h2>
+      {query.loading ? (
+        <Loading />
+      ) : query.error ? (
+        <ErrorNotice error={query.error} retry={query.retry} />
+      ) : !query.data?.length ? (
+        <Empty>
+          Nenhum conjunto carregado. Busque candles na Binance ou envie um JSON.
+        </Empty>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Par / intervalo</th>
+              <th>Candles</th>
+              <th>Período (UTC)</th>
+              <th>Origem</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {query.data.map((d) => (
+              <tr key={d.id} className={selectedId === d.id ? "selected" : ""}>
+                <td>
+                  {d.base_asset}/{d.quote_asset} · {d.interval}
+                  <small>{d.id}</small>
+                </td>
+                <td>{d.candle_count}</td>
+                <td>
+                  {utc(d.first_open_time_ms)}
+                  <br />
+                  {utc(d.last_open_time_ms)}
+                </td>
+                <td>{d.source}</td>
+                <td>
+                  <button
+                    type="button"
+                    aria-pressed={selectedId === d.id}
+                    aria-label={`Selecionar conjunto ${d.base_asset}/${d.quote_asset} ${d.interval} ${d.id}`}
+                    onClick={() => onSelect(d)}
+                  >
+                    {selectedId === d.id ? "Selecionado" : "Selecionar"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
 export function Acquisition({
   navigate,
 }: {
@@ -13,7 +78,7 @@ export function Acquisition({
     (signal) => request<{ items: Instrument[] }>("/instruments", { signal }),
     [],
   );
-  const [mode, setMode] = useState<"binance" | "json">("binance");
+  const [mode, setMode] = useState<"binance" | "json" | "loaded">("binance");
   const [symbol, setSymbol] = useState("");
   const [interval, setInterval] = useState("");
   const [start, setStart] = useState("");
@@ -32,7 +97,7 @@ export function Acquisition({
   const actualInterval = instrument?.intervals.includes(interval)
     ? interval
     : (instrument?.intervals[0] ?? "");
-  function switchMode(next: "binance" | "json") {
+  function switchMode(next: "binance" | "json" | "loaded") {
     active.current?.abort();
     setBusy(false);
     setError(undefined);
@@ -78,10 +143,17 @@ export function Acquisition({
       <header>
         <div>
           <p className="eyebrow">DADOS DE MERCADO</p>
-          <h1>Adicionar candles</h1>
+          <h1>Candles</h1>
         </div>
       </header>
       <div className="tabs" role="tablist" aria-label="Aquisição de candles">
+        <button
+          role="tab"
+          aria-selected={mode === "loaded"}
+          onClick={() => switchMode("loaded")}
+        >
+          Candles carregados
+        </button>
         <button
           role="tab"
           aria-selected={mode === "binance"}
@@ -97,12 +169,14 @@ export function Acquisition({
           Enviar JSON
         </button>
       </div>
-      {catalog.loading ? (
-        <Loading />
-      ) : catalog.error ? (
-        <ErrorNotice error={catalog.error} retry={catalog.retry} />
-      ) : (
-        <div className="two-columns">
+      <div className="two-columns">
+        {mode === "loaded" ? (
+          <LoadedDatasets selectedId={dataset?.id} onSelect={setDataset} />
+        ) : catalog.loading ? (
+          <Loading />
+        ) : catalog.error ? (
+          <ErrorNotice error={catalog.error} retry={catalog.retry} />
+        ) : (
           <form className="panel form" onSubmit={submit}>
             <label>
               Símbolo *
@@ -192,29 +266,31 @@ export function Acquisition({
                   : "Importar candles"}
             </button>
           </form>
-          <DatasetCard dataset={dataset}>
-            {dataset && (
-              <>
-                <p role="status" className="accent">
-                  {mode === "json"
-                    ? "Importação concluída"
+        )}
+        <DatasetCard dataset={dataset}>
+          {dataset && (
+            <>
+              <p role="status" className="accent">
+                {mode === "json"
+                  ? "Importação concluída"
+                  : mode === "loaded"
+                    ? "Conjunto pronto para criar sessão"
                     : "Dados disponíveis"}
-                </p>
-                <button
-                  className="primary"
-                  onClick={() =>
-                    navigate(
-                      "/sessions/new?dataset=" + encodeURIComponent(dataset.id),
-                    )
-                  }
-                >
-                  Criar sessão
-                </button>
-              </>
-            )}
-          </DatasetCard>
-        </div>
-      )}
+              </p>
+              <button
+                className="primary"
+                onClick={() =>
+                  navigate(
+                    "/sessions/new?dataset=" + encodeURIComponent(dataset.id),
+                  )
+                }
+              >
+                Criar sessão
+              </button>
+            </>
+          )}
+        </DatasetCard>
+      </div>
     </>
   );
 }
