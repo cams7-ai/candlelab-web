@@ -173,6 +173,47 @@ it("reabre sessão pela URL e troca resumo, parâmetros, eventos e gráfico", as
     expect(screen.getByTestId("chart")).toHaveTextContent("demo-ema"),
   );
 });
+it("mantém o novo resultado na comparação ao selecionar outro processamento", async () => {
+  const pending = { ...runs[1], status: "running", summary: null };
+  let reads = 0;
+  server.use(
+    http.get(apiBase + "/sessions/:id/runs", () =>
+      HttpResponse.json({ items: [runs[0], pending], next_cursor: null }),
+    ),
+    http.get(apiBase + `/runs/${pending.id}`, () => {
+      reads++;
+      return HttpResponse.json(reads === 1 ? pending : runs[1]);
+    }),
+  );
+  location.hash = `/sessions/${session.id}?run=${pending.id}`;
+  render(<App />);
+  await screen.findByText("Em andamento");
+  await screen.findByText("Concluído", {}, { timeout: 1800 });
+  const comparison = screen.getByRole("heading", {
+    name: "Comparar processamentos",
+  }).parentElement!;
+  expect(within(comparison).getAllByRole("row")).toHaveLength(3);
+
+  await userEvent.click(
+    within(comparison).getByRole("button", {
+      name: new RegExp(runs[0].id),
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("chart")).toHaveTextContent(runs[0].id),
+  );
+  expect(within(comparison).getAllByRole("row")).toHaveLength(3);
+
+  await userEvent.click(
+    within(comparison).getByRole("button", {
+      name: new RegExp(pending.id),
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("chart")).toHaveTextContent(pending.id),
+  );
+  expect(within(comparison).getAllByRole("row")).toHaveLength(3);
+});
 it("acompanha queued e running até completed e termina o polling", async () => {
   let reads = 0;
   const queued = { ...runs[0], id: "pending", status: "queued", summary: null };

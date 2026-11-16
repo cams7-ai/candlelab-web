@@ -142,6 +142,7 @@ export function SessionDetail({
   );
   const selectedId = runId ?? query.data?.runs[0]?.id;
   const [run, setRun] = useState<Run>();
+  const [updatedRuns, setUpdatedRuns] = useState<Record<string, Run>>({});
   const [pollError, setPollError] = useState<unknown>();
   const [retry, setRetry] = useState(0);
   const [search, setSearch] = useState("");
@@ -164,6 +165,7 @@ export function SessionDetail({
         if (result.session_id !== id)
           throw new Error("O processamento pertence a outra sessão.");
         setRun(result);
+        setUpdatedRuns((previous) => ({ ...previous, [result.id]: result }));
         if (result.status === "queued" || result.status === "running")
           timer = setTimeout(poll, 1000);
       } catch (error) {
@@ -197,7 +199,11 @@ export function SessionDetail({
     return <ErrorNotice error={query.error} retry={query.retry} />;
   if (!query.data) return null;
   const { session, dataset } = query.data;
-  const runs = query.data.runs.map((r) => (r.id === run?.id ? run : r));
+  const runsById = new Map(query.data.runs.map((r) => [r.id, r]));
+  Object.values(updatedRuns).forEach((r) => {
+    if (r.session_id === id) runsById.set(r.id, r);
+  });
+  const runs = Array.from(runsById.values());
   return (
     <>
       <header>
