@@ -7,6 +7,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  type IChartApi,
   type UTCTimestamp,
   type SeriesMarker,
   type Time,
@@ -57,6 +58,18 @@ export function Chart({
   fills: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  function zoom(factor: number) {
+    const timeScale = chartRef.current?.timeScale();
+    const range = timeScale?.getVisibleLogicalRange();
+    if (!timeScale || !range) return;
+    const center = (range.from + range.to) / 2;
+    const halfRange = Math.max(1, ((range.to - range.from) * factor) / 2);
+    timeScale.setVisibleLogicalRange({
+      from: center - halfRange,
+      to: center + halfRange,
+    });
+  }
   useEffect(() => {
     if (!host.current) return;
     const chart = createChart(host.current, {
@@ -80,6 +93,7 @@ export function Chart({
       localization: { locale: "pt-BR" },
       crosshair: { mode: 0 },
     });
+    chartRef.current = chart;
     const price = chart.addSeries(CandlestickSeries, {
       upColor: "#13dfbe",
       downColor: "#ff626e",
@@ -196,12 +210,31 @@ export function Chart({
     chart.panes().forEach((p, index) => p.setHeight(index === 0 ? 350 : 120));
     chart.timeScale().fitContent();
     return () => {
+      chartRef.current = null;
       markers.detach();
       chart.remove();
     };
   }, [candles, indicators, events, equity, run, signals, fills]);
   return (
     <div>
+      <div
+        className="chart-controls"
+        role="group"
+        aria-label="Visualização do gráfico"
+      >
+        <button type="button" onClick={() => zoom(0.8)}>
+          Zoom +
+        </button>
+        <button type="button" onClick={() => zoom(1.25)}>
+          Zoom -
+        </button>
+        <button
+          type="button"
+          onClick={() => chartRef.current?.timeScale().fitContent()}
+        >
+          <span aria-hidden="true">↔</span> Ver tudo
+        </button>
+      </div>
       <div
         ref={host}
         className="chart"

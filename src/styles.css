@@ -427,6 +427,18 @@ dd {
 .chart {
   height: 580px;
 }
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #304b59;
+}
+.chart-controls button {
+  padding: 7px 12px;
+  font-size: 13px;
+}
 .chart-credit {
   font-size: 11px;
   color: #9bb0c2;

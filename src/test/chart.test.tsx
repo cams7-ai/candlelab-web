@@ -1,10 +1,15 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { vi, it, expect } from "vitest";
 import { candles, makeSeries, runs } from "../mocks/fixtures";
 const mocks = vi.hoisted(() => {
   const series = () => ({ setData: vi.fn(), createPriceLine: vi.fn() });
   const price = series();
   const lines: ReturnType<typeof series>[] = [];
+  const timeScale = {
+    fitContent: vi.fn(),
+    getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 100 })),
+    setVisibleLogicalRange: vi.fn(),
+  };
   const chart = {
     addSeries: vi.fn((type: unknown) => {
       const s = type === "candles" ? price : series();
@@ -13,10 +18,10 @@ const mocks = vi.hoisted(() => {
     }),
     priceScale: () => ({ applyOptions: vi.fn() }),
     panes: () => [{ setHeight: vi.fn() }],
-    timeScale: () => ({ fitContent: vi.fn() }),
+    timeScale: () => timeScale,
     remove: vi.fn(),
   };
-  return { chart, price, lines, detach: vi.fn() };
+  return { chart, price, lines, timeScale, detach: vi.fn() };
 });
 vi.mock("lightweight-charts", () => ({
   CandlestickSeries: "candles",
@@ -28,6 +33,26 @@ vi.mock("lightweight-charts", () => ({
   createSeriesMarkers: vi.fn(() => ({ detach: mocks.detach })),
 }));
 import { Chart, chartTime, markersFor } from "../components/Chart";
+it("aproxima e afasta a área visível pelo centro e permite ver todo o histórico", () => {
+  const data = makeSeries(runs[0], candles);
+  render(<Chart candles={candles} {...data} run={runs[0]} signals fills />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Zoom +" }));
+  expect(mocks.timeScale.setVisibleLogicalRange).toHaveBeenLastCalledWith({
+    from: 10,
+    to: 90,
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Zoom -" }));
+  expect(mocks.timeScale.setVisibleLogicalRange).toHaveBeenLastCalledWith({
+    from: -12.5,
+    to: 112.5,
+  });
+
+  const calls = mocks.timeScale.fitContent.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Ver tudo" }));
+  expect(mocks.timeScale.fitContent).toHaveBeenCalledTimes(calls + 1);
+});
 it("ancora sinais e fills em candles distintos com ordem estável", () => {
   const { events } = makeSeries(runs[0], candles);
   const markers = markersFor([...events].reverse(), true, true);
