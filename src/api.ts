@@ -80,6 +80,11 @@ export async function allPages<T>(
     : items;
 }
 export const api = {
+  deleteSession: (id: string, signal?: AbortSignal) =>
+    request<void>(`/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      signal,
+    }),
   deleteRun: (id: string, signal?: AbortSignal) =>
     request<void>(`/runs/${encodeURIComponent(id)}`, {
       method: "DELETE",

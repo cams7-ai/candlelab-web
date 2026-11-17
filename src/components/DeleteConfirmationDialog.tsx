@@ -2,16 +2,22 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { ErrorNotice } from "./common";
 
-export function DeleteRunDialog({
-  runId,
-  strategyName,
+export function DeleteConfirmationDialog({
+  targetId,
+  targetName,
+  title,
+  description,
+  confirmLabel,
   busy,
   error,
   onCancel,
   onConfirm,
 }: {
-  runId: string;
-  strategyName: string;
+  targetId: string;
+  targetName: string;
+  title: string;
+  description: string;
+  confirmLabel: string;
   busy: boolean;
   error: unknown;
   onCancel: () => void;
@@ -50,8 +56,8 @@ export function DeleteRunDialog({
         className="delete-dialog"
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="delete-run-title"
-        aria-describedby="delete-run-description"
+        aria-labelledby="delete-confirmation-title"
+        aria-describedby="delete-confirmation-description"
         aria-busy={busy}
         tabIndex={-1}
         onKeyDown={(event) => {
@@ -81,14 +87,11 @@ export function DeleteRunDialog({
         }}
       >
         <div className="delete-dialog-content">
-          <h2 id="delete-run-title">Excluir processamento?</h2>
-          <p id="delete-run-description">
-            Os resultados e o relatório deste processamento serão removidos
-            permanentemente. Esta ação não pode ser desfeita.
-          </p>
+          <h2 id="delete-confirmation-title">{title}</h2>
+          <p id="delete-confirmation-description">{description}</p>
           <div className="delete-dialog-target">
-            <strong>{strategyName}</strong>
-            <span>{runId}</span>
+            <strong>{targetName}</strong>
+            <span>{targetId}</span>
           </div>
           {error != null && <ErrorNotice error={error} />}
         </div>
@@ -102,7 +105,7 @@ export function DeleteRunDialog({
             disabled={busy}
             onClick={onConfirm}
           >
-            {busy ? "Excluindo…" : "Excluir processamento"}
+            {busy ? "Excluindo…" : confirmLabel}
           </button>
         </footer>
       </div>

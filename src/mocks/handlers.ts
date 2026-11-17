@@ -248,6 +248,16 @@ export const handlers = [
     const s = store.sessions.find((s) => s.id === params.id);
     return s ? HttpResponse.json(s) : error(404, "Sessão não encontrada.");
   }),
+  http.delete(base + "/sessions/:id", ({ params }) => {
+    if (!store.sessions.some((s) => s.id === params.id))
+      return error(404, "Sessão não encontrada.");
+    for (const run of store.runs.filter((r) => r.session_id === params.id))
+      delete polls[run.id];
+    store.runs = store.runs.filter((r) => r.session_id !== params.id);
+    store.sessions = store.sessions.filter((s) => s.id !== params.id);
+    save();
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.get(base + "/sessions/:id/runs", ({ params, request }) =>
     page(
       store.runs.filter((r) => r.session_id === params.id),

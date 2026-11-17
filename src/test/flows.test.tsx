@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { vi, it, expect } from "vitest";
 import { http, HttpResponse } from "msw";
 import App from "../App";
-import { apiBase } from "../api";
+import { apiBase, request } from "../api";
 import { Acquisition } from "../components/Acquisition";
 import { NewSession } from "../components/Sessions";
 import { NewRun } from "../components/NewRun";
@@ -647,5 +647,84 @@ it("preserva a linha ao cancelar ou falhar a exclusão e permite tentar novament
   expect(retry).toBeEnabled();
   expect(within(comparison).getAllByRole("row")).toHaveLength(3);
   await userEvent.click(retry);
+  await waitFor(() => expect(calls).toBe(2));
+});
+
+it("exclui a sessão e seus processamentos e preserva outras sessões e candles", async () => {
+  const other = await request<{ id: string }>("/sessions", {
+    method: "POST",
+    body: JSON.stringify({ ...session, id: undefined, name: "Outra sessão" }),
+  });
+  location.hash = "/sessions";
+  const view = render(<App />);
+  const link = await screen.findByRole("link", { name: session.name });
+  const row = link.closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
+  const modal = screen.getByRole("alertdialog", { name: "Excluir sessão?" });
+  expect(modal).toHaveTextContent(session.name);
+  expect(modal).toHaveTextContent("todos os seus processamentos");
+  await userEvent.click(
+    within(modal).getByRole("button", { name: "Cancelar" }),
+  );
+  expect(link).toBeInTheDocument();
+  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
+  await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
+  await waitFor(() => expect(link).not.toBeInTheDocument());
+  for (const run of runs) {
+    await expect(request(`/runs/${run.id}`)).rejects.toMatchObject({
+      status: 404,
+    });
+  }
+  await expect(request(`/sessions/${session.id}`)).rejects.toMatchObject({
+    status: 404,
+  });
+  expect(await request(`/sessions/${other.id}`)).toMatchObject({
+    name: "Outra sessão",
+  });
+  expect(await request(`/datasets/${dataset.id}`)).toMatchObject({
+    id: dataset.id,
+  });
+  view.unmount();
+  render(<App />);
+  await screen.findByRole("link", { name: "Outra sessão" });
+  expect(
+    screen.queryByRole("link", { name: session.name }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Excluir" }));
+  await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
+  await screen.findByText(
+    "Nenhuma sessão encontrada. Crie uma sessão para começar.",
+  );
+});
+
+it("mantém a sessão após falha na exclusão e permite tentar novamente no modal", async () => {
+  let calls = 0;
+  server.use(
+    http.delete(apiBase + `/sessions/${session.id}`, () => {
+      calls++;
+      return HttpResponse.json(
+        {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Falha ao excluir sessão",
+            details: null,
+          },
+        },
+        { status: 503 },
+      );
+    }),
+  );
+  location.hash = "/sessions";
+  render(<App />);
+  const link = await screen.findByRole("link", { name: session.name });
+  await userEvent.click(
+    within(link.closest("tr")!).getByRole("button", { name: "Excluir" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Falha ao excluir sessão",
+  );
+  expect(link).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
   await waitFor(() => expect(calls).toBe(2));
 });

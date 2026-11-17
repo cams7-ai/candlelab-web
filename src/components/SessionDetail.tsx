@@ -16,7 +16,7 @@ import { format, labels, utc } from "../utils";
 import { Chart } from "./Chart";
 import { summaryLabels, summaryOrder } from "../financialSummary";
 import { Empty, ErrorNotice, Loading } from "./common";
-import { DeleteRunDialog } from "./DeleteRunDialog";
+import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 const statusLabels = {
   queued: "Na fila",
   running: "Em andamento",
@@ -256,9 +256,12 @@ export function SessionDetail({
   return (
     <>
       {deleteTarget && (
-        <DeleteRunDialog
-          runId={deleteTarget.id}
-          strategyName={name(deleteTarget)}
+        <DeleteConfirmationDialog
+          targetId={deleteTarget.id}
+          targetName={name(deleteTarget)}
+          title="Excluir processamento?"
+          description="Os resultados e o relatório deste processamento serão removidos permanentemente. Esta ação não pode ser desfeita."
+          confirmLabel="Excluir processamento"
           busy={deletingId != null}
           error={deleteError}
           onCancel={() => setDeleteTarget(undefined)}

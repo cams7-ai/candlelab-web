@@ -4,8 +4,15 @@ import { useQuery } from "../hooks";
 import type { Dataset, Session, Run } from "../types";
 import { decimal, format, percentToRate, rateToPercent } from "../utils";
 import { DatasetCard, Empty, ErrorNotice, Loading } from "./common";
+import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 export function Sessions({ navigate }: { navigate: (path: string) => void }) {
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Session>();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<unknown>();
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const activeDelete = useRef<AbortController>();
+  useEffect(() => () => activeDelete.current?.abort(), []);
   const query = useQuery(async (signal) => {
     const [sessions, datasets] = await Promise.all([
       allPages<Session>("/sessions", signal, (s) => s.id),
@@ -22,8 +29,44 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
     );
     return { sessions, datasets, counts: new Map(counts) };
   }, []);
+  const sessions =
+    query.data?.sessions.filter(
+      (s) =>
+        !deletedIds.includes(s.id) &&
+        s.name.toLowerCase().includes(search.toLowerCase()),
+    ) ?? [];
+  async function deleteSession() {
+    if (!deleteTarget || deleting) return;
+    const controller = new AbortController();
+    activeDelete.current = controller;
+    setDeleting(true);
+    setDeleteError(undefined);
+    try {
+      await api.deleteSession(deleteTarget.id, controller.signal);
+      if (controller.signal.aborted) return;
+      setDeletedIds((previous) => [...previous, deleteTarget.id]);
+      setDeleteTarget(undefined);
+    } catch (error) {
+      if (!controller.signal.aborted) setDeleteError(error);
+    } finally {
+      if (!controller.signal.aborted) setDeleting(false);
+    }
+  }
   return (
     <>
+      {deleteTarget && (
+        <DeleteConfirmationDialog
+          targetId={deleteTarget.id}
+          targetName={deleteTarget.name}
+          title="Excluir sessão?"
+          description="A sessão e todos os seus processamentos, resultados e relatórios serão removidos permanentemente. Esta ação não pode ser desfeita."
+          confirmLabel="Excluir sessão"
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => setDeleteTarget(undefined)}
+          onConfirm={() => void deleteSession()}
+        />
+      )}
       <header>
         <div>
           <p className="eyebrow">LABORATÓRIO DE BACKTEST</p>
@@ -57,41 +100,49 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
                   <th>Caixa inicial</th>
                   <th>Taxa</th>
                   <th>Processamentos</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {query.data.sessions
-                  .filter((s) =>
-                    s.name.toLowerCase().includes(search.toLowerCase()),
-                  )
-                  .map((s) => {
-                    const d = query.data!.datasets.find(
-                      (d) => d.id === s.dataset_id,
-                    );
-                    return (
-                      <tr key={s.id}>
-                        <td>
-                          <a href={"#/sessions/" + encodeURIComponent(s.id)}>
-                            {s.name}
-                          </a>
-                        </td>
-                        <td>
-                          {d
-                            ? `${d.base_asset}/${d.quote_asset}`
-                            : "Indisponível"}
-                        </td>
-                        <td>{d?.interval ?? "—"}</td>
-                        <td>{format(s.initial_cash)} USDT</td>
-                        <td>{format(rateToPercent(s.fee_rate))}%</td>
-                        <td>{query.data!.counts.get(s.id)}</td>
-                      </tr>
-                    );
-                  })}
+                {sessions.map((s) => {
+                  const d = query.data!.datasets.find(
+                    (d) => d.id === s.dataset_id,
+                  );
+                  return (
+                    <tr key={s.id}>
+                      <td>
+                        <a href={"#/sessions/" + encodeURIComponent(s.id)}>
+                          {s.name}
+                        </a>
+                      </td>
+                      <td>
+                        {d
+                          ? `${d.base_asset}/${d.quote_asset}`
+                          : "Indisponível"}
+                      </td>
+                      <td>{d?.interval ?? "—"}</td>
+                      <td>{format(s.initial_cash)} USDT</td>
+                      <td>{format(rateToPercent(s.fee_rate))}%</td>
+                      <td>{query.data!.counts.get(s.id)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="negative"
+                          disabled={deleting}
+                          onClick={() => {
+                            setDeleteError(undefined);
+                            setDeleteTarget(s);
+                          }}
+                        >
+                          Excluir
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
-            {!query.data.sessions.some((s) =>
-              s.name.toLowerCase().includes(search.toLowerCase()),
-            ) && (
+            {!sessions.length && (
               <Empty>
                 Nenhuma sessão encontrada. Crie uma sessão para começar.
               </Empty>
