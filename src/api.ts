@@ -80,6 +80,11 @@ export async function allPages<T>(
     : items;
 }
 export const api = {
+  deleteDataset: (id: string, signal?: AbortSignal) =>
+    request<void>(`/datasets/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      signal,
+    }),
   deleteSession: (id: string, signal?: AbortSignal) =>
     request<void>(`/sessions/${encodeURIComponent(id)}`, {
       method: "DELETE",

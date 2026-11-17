@@ -4,25 +4,66 @@ import { useQuery } from "../hooks";
 import type { Dataset, Instrument } from "../types";
 import { binanceInput, datasetName, utc } from "../utils";
 import { DatasetCard, Empty, ErrorNotice, Loading } from "./common";
+import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 function LoadedDatasets({
   selectedId,
   onSelect,
+  onDelete,
 }: {
   selectedId?: string;
   onSelect: (dataset: Dataset) => void;
+  onDelete: (id: string) => void;
 }) {
+  const [deleteTarget, setDeleteTarget] = useState<Dataset>();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<unknown>();
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const activeDelete = useRef<AbortController>();
+  useEffect(() => () => activeDelete.current?.abort(), []);
   const query = useQuery(
     (signal) => allPages<Dataset>("/datasets", signal, (d) => d.id),
     [],
   );
+  const datasets = query.data?.filter((d) => !deletedIds.includes(d.id)) ?? [];
+  async function deleteDataset() {
+    if (!deleteTarget || deleting) return;
+    const controller = new AbortController();
+    activeDelete.current = controller;
+    setDeleting(true);
+    setDeleteError(undefined);
+    try {
+      await api.deleteDataset(deleteTarget.id, controller.signal);
+      if (controller.signal.aborted) return;
+      setDeletedIds((previous) => [...previous, deleteTarget.id]);
+      onDelete(deleteTarget.id);
+      setDeleteTarget(undefined);
+    } catch (error) {
+      if (!controller.signal.aborted) setDeleteError(error);
+    } finally {
+      if (!controller.signal.aborted) setDeleting(false);
+    }
+  }
   return (
     <section className="panel table-wrap">
+      {deleteTarget && (
+        <DeleteConfirmationDialog
+          targetId={deleteTarget.id}
+          targetName={datasetName(deleteTarget)}
+          title="Excluir conjunto de candles?"
+          description="Este conjunto de candles, todas as sessões que o utilizam e todos os seus processamentos, resultados e relatórios serão removidos permanentemente. Esta ação não pode ser desfeita."
+          confirmLabel="Excluir candles"
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => setDeleteTarget(undefined)}
+          onConfirm={() => void deleteDataset()}
+        />
+      )}
       <h2>Candles carregados</h2>
       {query.loading ? (
         <Loading />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={query.retry} />
-      ) : !query.data?.length ? (
+      ) : !datasets.length ? (
         <Empty>
           Nenhum conjunto carregado. Busque candles na Binance ou envie um JSON.
         </Empty>
@@ -35,10 +76,11 @@ function LoadedDatasets({
               <th>Candles</th>
               <th>Período (UTC)</th>
               <th>Origem</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
-            {query.data.map((d) => (
+            {datasets.map((d) => (
               <tr key={d.id} className={selectedId === d.id ? "selected" : ""}>
                 <td>
                   <button
@@ -60,6 +102,19 @@ function LoadedDatasets({
                   {utc(d.last_open_time_ms)}
                 </td>
                 <td>{d.source}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="negative"
+                    disabled={deleting}
+                    onClick={() => {
+                      setDeleteError(undefined);
+                      setDeleteTarget(d);
+                    }}
+                  >
+                    Excluir
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -170,7 +225,15 @@ export function Acquisition({
       </div>
       <div className="two-columns">
         {mode === "loaded" ? (
-          <LoadedDatasets selectedId={dataset?.id} onSelect={setDataset} />
+          <LoadedDatasets
+            selectedId={dataset?.id}
+            onSelect={setDataset}
+            onDelete={(id) =>
+              setDataset((current) =>
+                current?.id === id ? undefined : current,
+              )
+            }
+          />
         ) : catalog.loading ? (
           <Loading />
         ) : catalog.error ? (

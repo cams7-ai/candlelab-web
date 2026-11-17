@@ -228,6 +228,21 @@ export const handlers = [
     const d = store.datasets.find((d) => d.id === params.id);
     return d ? HttpResponse.json(d) : error(404, "Conjunto não encontrado.");
   }),
+  http.delete(base + "/datasets/:id", ({ params }) => {
+    if (!store.datasets.some((d) => d.id === params.id))
+      return error(404, "Conjunto não encontrado.");
+    const sessionIds = new Set(
+      store.sessions.filter((s) => s.dataset_id === params.id).map((s) => s.id),
+    );
+    for (const run of store.runs.filter((r) => sessionIds.has(r.session_id)))
+      delete polls[run.id];
+    store.runs = store.runs.filter((r) => !sessionIds.has(r.session_id));
+    store.sessions = store.sessions.filter((s) => !sessionIds.has(s.id));
+    store.datasets = store.datasets.filter((d) => d.id !== params.id);
+    delete store.candles[String(params.id)];
+    save();
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.get(base + "/datasets/:id/candles", ({ params, request }) => {
     const data = store.candles[String(params.id)];
     return data

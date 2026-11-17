@@ -728,3 +728,138 @@ it("mantém a sessão após falha na exclusão e permite tentar novamente no mod
   await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
   await waitFor(() => expect(calls).toBe(2));
 });
+
+it("exclui os candles com suas sessões e processamentos e limpa a seleção", async () => {
+  const secondSession = await request<{ id: string }>("/sessions", {
+    method: "POST",
+    body: JSON.stringify({
+      ...session,
+      id: undefined,
+      name: "Outra sessão BTC",
+    }),
+  });
+  const pending = await request<{ id: string }>(
+    `/sessions/${secondSession.id}/runs`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        strategy_id: runs[0].strategy_id,
+        parameters: runs[0].parameters,
+      }),
+    },
+  );
+  const otherDataset = await request<{ id: string }>("/datasets/binance", {
+    method: "POST",
+    body: JSON.stringify({ symbol: "ETHUSDT", interval: "5m" }),
+  });
+  const otherSession = await request<{ id: string }>("/sessions", {
+    method: "POST",
+    body: JSON.stringify({
+      ...session,
+      id: undefined,
+      dataset_id: otherDataset.id,
+      name: "Sessão ETH",
+    }),
+  });
+  const view = render(<Acquisition navigate={vi.fn()} />);
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  const table = await screen.findByRole("table");
+  const row = within(table).getAllByRole("row")[1];
+  await userEvent.click(within(row).getByRole("button", { pressed: false }));
+  expect(
+    screen.getByRole("button", { name: "Criar sessão" }),
+  ).toBeInTheDocument();
+  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
+  const modal = screen.getByRole("alertdialog", {
+    name: "Excluir conjunto de candles?",
+  });
+  expect(modal).toHaveTextContent("todas as sessões que o utilizam");
+  expect(modal).toHaveTextContent(dataset.id);
+  await userEvent.click(
+    within(modal).getByRole("button", { name: "Cancelar" }),
+  );
+  expect(row).toBeInTheDocument();
+  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Excluir candles" }),
+  );
+  await waitFor(() => expect(row).not.toBeInTheDocument());
+  expect(
+    screen.queryByRole("button", { name: "Criar sessão" }),
+  ).not.toBeInTheDocument();
+  for (const id of [session.id, secondSession.id]) {
+    await expect(request(`/sessions/${id}`)).rejects.toMatchObject({
+      status: 404,
+    });
+  }
+  for (const id of [...runs.map((run) => run.id), pending.id]) {
+    await expect(request(`/runs/${id}`)).rejects.toMatchObject({ status: 404 });
+  }
+  await expect(request(`/datasets/${dataset.id}`)).rejects.toMatchObject({
+    status: 404,
+  });
+  await expect(
+    request(`/datasets/${dataset.id}/candles`),
+  ).rejects.toMatchObject({ status: 404 });
+  expect(await request(`/sessions/${otherSession.id}`)).toMatchObject({
+    id: otherSession.id,
+  });
+  expect(await request(`/datasets/${otherDataset.id}`)).toMatchObject({
+    id: otherDataset.id,
+  });
+  view.unmount();
+  render(<Acquisition navigate={vi.fn()} />);
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  const refreshed = await screen.findByRole("table");
+  expect(within(refreshed).getAllByRole("row")).toHaveLength(2);
+  await userEvent.click(
+    within(refreshed).getByRole("button", { name: "Excluir" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Excluir candles" }),
+  );
+  await screen.findByText(/Nenhum conjunto carregado/);
+});
+
+it("mantém o conjunto selecionado após falha na exclusão e permite tentar novamente", async () => {
+  let calls = 0;
+  server.use(
+    http.delete(apiBase + `/datasets/${dataset.id}`, () => {
+      calls++;
+      return HttpResponse.json(
+        {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Falha ao excluir candles",
+            details: null,
+          },
+        },
+        { status: 503 },
+      );
+    }),
+  );
+  render(<Acquisition navigate={vi.fn()} />);
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Candles carregados" }),
+  );
+  const table = await screen.findByRole("table");
+  await userEvent.click(within(table).getByRole("button", { pressed: false }));
+  await userEvent.click(within(table).getByRole("button", { name: "Excluir" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Excluir candles" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Falha ao excluir candles",
+  );
+  expect(
+    within(table).getByRole("button", { pressed: true }),
+  ).toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Excluir candles" }),
+  );
+  await waitFor(() => expect(calls).toBe(2));
+});
