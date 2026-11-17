@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { allPages, request, resource } from "../api";
+import { allPages, api, request, resource } from "../api";
 import { useQuery } from "../hooks";
 import type {
   Candle,
@@ -16,6 +16,7 @@ import { format, labels, utc } from "../utils";
 import { Chart } from "./Chart";
 import { summaryLabels, summaryOrder } from "../financialSummary";
 import { Empty, ErrorNotice, Loading } from "./common";
+import { DeleteRunDialog } from "./DeleteRunDialog";
 const statusLabels = {
   queued: "Na fila",
   running: "Em andamento",
@@ -107,7 +108,11 @@ export function SessionDetail({
     },
     [id],
   );
-  const selectedId = runId ?? query.data?.runs[0]?.id;
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const selectedId =
+    runId && !deletedIds.includes(runId)
+      ? runId
+      : query.data?.runs.find((r) => !deletedIds.includes(r.id))?.id;
   const [run, setRun] = useState<Run>();
   const [updatedRuns, setUpdatedRuns] = useState<Record<string, Run>>({});
   const [pollError, setPollError] = useState<unknown>();
@@ -118,6 +123,11 @@ export function SessionDetail({
   const [showParameters, setShowParameters] = useState(true);
   const [exportingId, setExportingId] = useState<string>();
   const [exportError, setExportError] = useState<unknown>();
+  const [deletingId, setDeletingId] = useState<string>();
+  const [deleteTarget, setDeleteTarget] = useState<Run>();
+  const [deleteError, setDeleteError] = useState<unknown>();
+  const deleteController = useRef<AbortController>();
+  useEffect(() => () => deleteController.current?.abort(), []);
   const exportController = useRef<AbortController>();
   const selector = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
@@ -217,9 +227,44 @@ export function SessionDetail({
   Object.values(updatedRuns).forEach((r) => {
     if (r.session_id === id) runsById.set(r.id, r);
   });
-  const runs = Array.from(runsById.values());
+  const runs = Array.from(runsById.values()).filter(
+    (r) => !deletedIds.includes(r.id),
+  );
+  async function deleteRun(result: Run) {
+    if (deletingId || exportingId) return;
+    const controller = new AbortController();
+    deleteController.current = controller;
+    setDeletingId(result.id);
+    setDeleteError(undefined);
+    try {
+      await api.deleteRun(result.id, controller.signal);
+      if (controller.signal.aborted) return;
+      setDeletedIds((previous) => [...previous, result.id]);
+      setDeleteTarget(undefined);
+      if (selectedId === result.id) {
+        const next = runs.find((r) => r.id !== result.id);
+        navigate(
+          `/sessions/${encodeURIComponent(id)}${next ? `?run=${encodeURIComponent(next.id)}` : ""}`,
+        );
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setDeleteError(error);
+    } finally {
+      if (!controller.signal.aborted) setDeletingId(undefined);
+    }
+  }
   return (
     <>
+      {deleteTarget && (
+        <DeleteRunDialog
+          runId={deleteTarget.id}
+          strategyName={name(deleteTarget)}
+          busy={deletingId != null}
+          error={deleteError}
+          onCancel={() => setDeleteTarget(undefined)}
+          onConfirm={() => void deleteRun(deleteTarget)}
+        />
+      )}
       <header>
         <div>
           <a className="breadcrumb" href="#/sessions">
@@ -424,6 +469,7 @@ export function SessionDetail({
                 <th>Taxas</th>
                 <th>Drawdown</th>
                 <th>Relatório</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -458,10 +504,23 @@ export function SessionDetail({
                     <td>
                       <button
                         type="button"
-                        disabled={exportingId != null}
+                        disabled={exportingId != null || deletingId != null}
                         onClick={() => void exportPdf(r)}
                       >
                         {exportingId === r.id ? "Gerando PDF…" : "Exportar PDF"}
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="negative"
+                        disabled={deletingId != null || exportingId != null}
+                        onClick={() => {
+                          setDeleteError(undefined);
+                          setDeleteTarget(r);
+                        }}
+                      >
+                        {deletingId === r.id ? "Excluindo…" : "Excluir"}
                       </button>
                     </td>
                   </tr>

@@ -298,6 +298,16 @@ export const handlers = [
     save();
     return HttpResponse.json(run, { status: 202 });
   }),
+  http.delete(base + "/runs/:id", ({ params }) => {
+    const run = store.runs.find((r) => r.id === params.id);
+    if (!run) return error(404, "Processamento não encontrado.");
+    if (run.status !== "completed" && run.status !== "failed")
+      return error(409, "Aguarde o término do processamento para excluir.");
+    store.runs = store.runs.filter((r) => r.id !== params.id);
+    delete polls[run.id];
+    save();
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.get(base + "/runs/:id", ({ params }) => {
     const run = store.runs.find((r) => r.id === params.id);
     if (!run) return error(404, "Processamento não encontrado.");

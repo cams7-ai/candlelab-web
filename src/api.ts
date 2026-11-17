@@ -52,7 +52,7 @@ export async function request<T>(
     }
     throw new ApiError(response.status, body);
   }
-  return response.json();
+  return response.status === 204 ? undefined : response.json();
 }
 export async function allPages<T>(
   path: string,
@@ -80,6 +80,11 @@ export async function allPages<T>(
     : items;
 }
 export const api = {
+  deleteRun: (id: string, signal?: AbortSignal) =>
+    request<void>(`/runs/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      signal,
+    }),
   binance: (body: BinanceInput, signal?: AbortSignal) =>
     request<Dataset>("/datasets/binance", {
       method: "POST",

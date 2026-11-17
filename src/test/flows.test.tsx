@@ -555,3 +555,97 @@ it("exibe falha de consulta e permite retentativa", async () => {
   );
   await screen.findByLabelText("Símbolo *");
 });
+
+it("exclui o processamento selecionado, atualiza a URL e persiste a exclusão", async () => {
+  location.hash = `/sessions/${session.id}?run=${runs[0].id}`;
+  const view = render(<App />);
+  const comparison = (
+    await screen.findByRole("heading", { name: "Comparar processamentos" })
+  ).parentElement!;
+  const row = within(comparison)
+    .getByRole("button", { name: new RegExp(runs[0].id) })
+    .closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Excluir processamento" }),
+  );
+  await waitFor(() => expect(location.hash).toContain(`run=${runs[1].id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("chart")).toHaveTextContent(runs[1].id),
+  );
+  expect(within(comparison).getAllByRole("row")).toHaveLength(2);
+  view.unmount();
+  render(<App />);
+  const refreshed = (
+    await screen.findByRole("heading", { name: "Comparar processamentos" })
+  ).parentElement!;
+  expect(within(refreshed).getAllByRole("row")).toHaveLength(2);
+  expect(within(refreshed).queryByText(runs[0].id)).not.toBeInTheDocument();
+  await userEvent.click(
+    within(refreshed).getByRole("button", { name: "Excluir" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Excluir processamento" }),
+  );
+  await screen.findByText("Nenhum resultado concluído para comparar.");
+  await waitFor(() => expect(location.hash).toBe(`#/sessions/${session.id}`));
+  await screen.findByText(/Nenhum processamento\. Inicie/);
+});
+
+it("preserva a linha ao cancelar ou falhar a exclusão e permite tentar novamente", async () => {
+  let calls = 0;
+  server.use(
+    http.delete(apiBase + `/runs/${runs[1].id}`, () => {
+      calls++;
+      return HttpResponse.json(
+        {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Falha ao excluir",
+            details: null,
+          },
+        },
+        { status: 503 },
+      );
+    }),
+  );
+  render(
+    <SessionDetail id={session.id} runId={runs[0].id} navigate={vi.fn()} />,
+  );
+  const comparison = (
+    await screen.findByRole("heading", { name: "Comparar processamentos" })
+  ).parentElement!;
+  const row = within(comparison)
+    .getByRole("button", { name: new RegExp(runs[1].id) })
+    .closest("tr")!;
+  const button = within(row).getByRole("button", { name: "Excluir" });
+  await userEvent.click(button);
+  expect(calls).toBe(0);
+  const modal = screen.getByRole("alertdialog");
+  expect(modal).toHaveTextContent(runs[1].id);
+  expect(screen.getByRole("button", { name: "Cancelar" })).toHaveFocus();
+  await userEvent.tab({ shift: true });
+  expect(
+    screen.getByRole("button", { name: "Excluir processamento" }),
+  ).toHaveFocus();
+  await userEvent.tab();
+  expect(screen.getByRole("button", { name: "Cancelar" })).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(button).toHaveFocus();
+  await userEvent.click(button);
+  await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  expect(calls).toBe(0);
+  await userEvent.click(button);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Excluir processamento" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Falha ao excluir",
+  );
+  const retry = screen.getByRole("button", { name: "Excluir processamento" });
+  expect(retry).toBeEnabled();
+  expect(within(comparison).getAllByRole("row")).toHaveLength(3);
+  await userEvent.click(retry);
+  await waitFor(() => expect(calls).toBe(2));
+});
