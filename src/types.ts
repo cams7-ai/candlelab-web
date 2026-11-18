@@ -94,6 +94,7 @@ export interface Run {
   session_id: string;
   strategy_id: string;
   parameters: Record<string, string | number>;
+  auxiliary_filename?: string | null;
   status: "queued" | "running" | "completed" | "failed";
   summary: Summary | null;
   error: ApiErrorBody | null;

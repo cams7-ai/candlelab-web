@@ -121,7 +121,7 @@ export const api = {
     }),
   createRun: (
     id: string,
-    body: Pick<Run, "strategy_id" | "parameters">,
+    body: Pick<Run, "strategy_id" | "parameters" | "auxiliary_filename">,
     signal?: AbortSignal,
   ) =>
     request<Run>(`/sessions/${encodeURIComponent(id)}/runs`, {

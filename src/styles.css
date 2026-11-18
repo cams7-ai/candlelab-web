@@ -356,6 +356,9 @@ dd {
 .metric:last-child {
   border: 0;
 }
+.auxiliary-filename {
+  overflow-wrap: anywhere;
+}
 .metric dd {
   min-width: 0;
   margin: 0;

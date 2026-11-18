@@ -284,7 +284,7 @@ export const handlers = [
       return error(404, "Sessão não encontrada.");
     const body = (await request.json()) as Pick<
       Run,
-      "strategy_id" | "parameters"
+      "strategy_id" | "parameters" | "auxiliary_filename"
     >;
     if (!strategies.some((s) => s.id === body.strategy_id))
       return error(422, "Estratégia inexistente.", { field: "strategy_id" });

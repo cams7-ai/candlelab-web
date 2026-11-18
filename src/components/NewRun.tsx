@@ -27,6 +27,8 @@ export function NewRun({
   );
   const [strategyId, setStrategyId] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
+  const [auxiliaryFilename, setAuxiliaryFilename] = useState<string>();
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
   const active = useRef<AbortController>();
@@ -45,11 +47,13 @@ export function NewRun({
     importRevision.current += 1;
     setStrategyId(id);
     setValues({});
+    setAuxiliaryFilename(undefined);
+    setImporting(false);
     setError(undefined);
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!strategy) return;
+    if (!strategy || importing) return;
     const controller = new AbortController();
     active.current = controller;
     setBusy(true);
@@ -69,7 +73,13 @@ export function NewRun({
       );
       const run = await api.createRun(
         id,
-        { strategy_id: strategy.id, parameters },
+        {
+          strategy_id: strategy.id,
+          parameters,
+          ...(auxiliaryFilename
+            ? { auxiliary_filename: auxiliaryFilename }
+            : {}),
+        },
         controller.signal,
       );
       if (!controller.signal.aborted)
@@ -163,18 +173,20 @@ export function NewRun({
                         {schema.contentMediaType === "application/json" ? (
                           <>
                             <input
+                              key={strategy.id}
                               type="file"
                               accept=".json,application/json"
                               aria-label="Importar dados auxiliares JSON"
                               onChange={async (e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
+                                const revision = ++importRevision.current;
+                                setImporting(true);
                                 try {
                                   if (file.size > 8 * 1024 * 1024)
                                     throw new Error(
                                       "Arquivo auxiliar excede 8 MiB.",
                                     );
-                                  const revision = importRevision.current;
                                   const raw = await file.text();
                                   if (revision !== importRevision.current)
                                     return;
@@ -183,12 +195,22 @@ export function NewRun({
                                     ...previous,
                                     [key]: raw,
                                   }));
+                                  setAuxiliaryFilename(file.name);
                                   setError(undefined);
                                 } catch (err) {
-                                  setError(err);
+                                  if (revision === importRevision.current)
+                                    setError(err);
+                                } finally {
+                                  if (revision === importRevision.current)
+                                    setImporting(false);
                                 }
                               }}
                             />
+                            {auxiliaryFilename && (
+                              <small className="muted auxiliary-filename">
+                                Arquivo carregado: {auxiliaryFilename}
+                              </small>
+                            )}
                             <textarea
                               required
                               aria-label="Dados auxiliares JSON"
@@ -197,9 +219,11 @@ export function NewRun({
                                 values[key] ??
                                 String(strategy.defaults[key] ?? "[]")
                               }
-                              onChange={(e) =>
-                                setValues({ ...values, [key]: e.target.value })
-                              }
+                              onChange={(e) => {
+                                importRevision.current += 1;
+                                setImporting(false);
+                                setValues({ ...values, [key]: e.target.value });
+                              }}
                             />
                           </>
                         ) : (
@@ -253,7 +277,10 @@ export function NewRun({
                 >
                   Cancelar
                 </button>
-                <button className="primary" disabled={busy || !strategy}>
+                <button
+                  className="primary"
+                  disabled={busy || importing || !strategy}
+                >
                   {busy ? "Iniciando…" : "▶ Iniciar processamento"}
                 </button>
               </footer>

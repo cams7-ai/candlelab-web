@@ -431,6 +431,14 @@ export function SessionDetail({
                 <>
                   <p className="muted">{name(run)}</p>
                   <dl>
+                    {run.auxiliary_filename && (
+                      <div className="metric">
+                        <dt>Arquivo auxiliar JSON</dt>
+                        <dd className="auxiliary-filename">
+                          {run.auxiliary_filename}
+                        </dd>
+                      </div>
+                    )}
                     {Object.entries(run.parameters).map(([k, v]) => (
                       <div className="metric" key={k}>
                         <dt>{labels[k] ?? k}</dt>
