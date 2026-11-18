@@ -2,7 +2,13 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { allPages, api, resource } from "../api";
 import { useQuery } from "../hooks";
 import type { Dataset, Session, Run } from "../types";
-import { decimal, format, percentToRate, rateToPercent } from "../utils";
+import {
+  datasetName,
+  decimal,
+  format,
+  percentToRate,
+  rateToPercent,
+} from "../utils";
 import { DatasetCard, Empty, ErrorNotice, Loading } from "./common";
 import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 export function Sessions({ navigate }: { navigate: (path: string) => void }) {
@@ -239,7 +245,7 @@ export function NewSession({
                 {query.data?.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.base_asset}/{d.quote_asset} · {d.interval} ·{" "}
-                    {d.candle_count} candles · {d.id}
+                    {d.candle_count} candles · {datasetName(d)}
                   </option>
                 ))}
               </select>
