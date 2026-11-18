@@ -8,6 +8,7 @@ import {
   LineSeries,
   LineStyle,
   type IChartApi,
+  type ISeriesMarkersPluginApi,
   type UTCTimestamp,
   type SeriesMarker,
   type Time,
@@ -59,6 +60,7 @@ export function Chart({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   function zoom(factor: number) {
     const timeScale = chartRef.current?.timeScale();
     const range = timeScale?.getVisibleLogicalRange();
@@ -110,10 +112,8 @@ export function Chart({
         close: Number(c.close),
       })),
     );
-    const markers = createSeriesMarkers(
-      price,
-      markersFor(events, signals, fills),
-    );
+    const markers = createSeriesMarkers(price);
+    markersRef.current = markers;
     const keys = Array.from(
       new Set(indicators.flatMap((i) => Object.keys(i.values))),
     );
@@ -211,10 +211,14 @@ export function Chart({
     chart.timeScale().fitContent();
     return () => {
       chartRef.current = null;
+      markersRef.current = null;
       markers.detach();
       chart.remove();
     };
-  }, [candles, indicators, events, equity, run, signals, fills]);
+  }, [candles, indicators, equity, run]);
+  useEffect(() => {
+    markersRef.current?.setMarkers(markersFor(events, signals, fills));
+  }, [candles, indicators, equity, run, events, signals, fills]);
   return (
     <div>
       <div

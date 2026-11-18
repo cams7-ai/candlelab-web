@@ -21,7 +21,14 @@ const mocks = vi.hoisted(() => {
     timeScale: () => timeScale,
     remove: vi.fn(),
   };
-  return { chart, price, lines, timeScale, detach: vi.fn() };
+  return {
+    chart,
+    price,
+    lines,
+    timeScale,
+    detach: vi.fn(),
+    setMarkers: vi.fn(),
+  };
 });
 vi.mock("lightweight-charts", () => ({
   CandlestickSeries: "candles",
@@ -30,9 +37,50 @@ vi.mock("lightweight-charts", () => ({
   ColorType: { Solid: "solid" },
   LineStyle: { Dashed: 2 },
   createChart: vi.fn(() => mocks.chart),
-  createSeriesMarkers: vi.fn(() => ({ detach: mocks.detach })),
+  createSeriesMarkers: vi.fn(() => ({
+    detach: mocks.detach,
+    setMarkers: mocks.setMarkers,
+  })),
 }));
 import { Chart, chartTime, markersFor } from "../components/Chart";
+it("preserva o zoom e a posição ao alternar sinais e execuções", () => {
+  const data = makeSeries(runs[0], candles);
+  const view = render(
+    <Chart candles={candles} {...data} run={runs[0]} signals fills />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Zoom +" }));
+  const fitCalls = mocks.timeScale.fitContent.mock.calls.length;
+  const rangeCalls = mocks.timeScale.setVisibleLogicalRange.mock.calls.length;
+  const removeCalls = mocks.chart.remove.mock.calls.length;
+  const seriesCalls = mocks.chart.addSeries.mock.calls.length;
+
+  for (const [signals, fills] of [
+    [false, true],
+    [false, false],
+    [true, false],
+    [true, true],
+  ]) {
+    view.rerender(
+      <Chart
+        candles={candles}
+        {...data}
+        run={runs[0]}
+        signals={signals}
+        fills={fills}
+      />,
+    );
+    expect(mocks.setMarkers).toHaveBeenLastCalledWith(
+      markersFor(data.events, signals, fills),
+    );
+  }
+
+  expect(mocks.timeScale.fitContent).toHaveBeenCalledTimes(fitCalls);
+  expect(mocks.timeScale.setVisibleLogicalRange).toHaveBeenCalledTimes(
+    rangeCalls,
+  );
+  expect(mocks.chart.remove).toHaveBeenCalledTimes(removeCalls);
+  expect(mocks.chart.addSeries).toHaveBeenCalledTimes(seriesCalls);
+});
 it("aproxima e afasta a área visível pelo centro e permite ver todo o histórico", () => {
   const data = makeSeries(runs[0], candles);
   render(<Chart candles={candles} {...data} run={runs[0]} signals fills />);
