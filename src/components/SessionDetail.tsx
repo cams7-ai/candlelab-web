@@ -503,7 +503,9 @@ export function SessionDetail({
                     <td>{format(r.summary!.final_equity)} USDT</td>
                     <td>{format(r.summary!.return_pct)}%</td>
                     <td>{format(r.summary!.total_fees)} USDT</td>
-                    <td>{format(r.summary!.max_drawdown_pct)}%</td>
+                    <td title={`${format(r.summary!.max_drawdown_pct)}%`}>
+                      {format(Number(r.summary!.max_drawdown_pct).toFixed(2))}%
+                    </td>
                     <td>
                       <button
                         type="button"
