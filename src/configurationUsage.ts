@@ -6,8 +6,21 @@ export interface ConfigurationUsage {
   uncertainCopies: string[];
 }
 
-// Nested snapshots carry no source ID. A changed copy of the
-// same base strategy cannot be ruled out; keep deletion blocked in that case.
+// Nested snapshots carry no source ID. A changed copy of the same base
+// strategy or composition cannot be ruled out; keep deletion blocked.
+function baseStrategies(definition: CombinationDefinition): string {
+  const ids = new Set<string>();
+  function collect(value: CombinationDefinition) {
+    if (value.strategy_id) ids.add(value.strategy_id);
+    for (const member of value.members) {
+      if (member.combination) collect(member.combination);
+      else if (member.strategy_id) ids.add(member.strategy_id);
+    }
+  }
+  collect(definition);
+  return JSON.stringify([...ids].sort());
+}
+
 function embeddedUsage(
   definition: CombinationDefinition,
   target: StrategyCombination,
@@ -16,7 +29,13 @@ function embeddedUsage(
   for (const member of definition.members) {
     const copy = member.combination;
     if (!copy) continue;
-    if (copy.kind === "strategy" && copy.strategy_id === target.strategy_id) {
+    const sameBase =
+      copy.kind === target.kind &&
+      (copy.kind === "custom"
+        ? copy.name === target.name ||
+          baseStrategies(copy) === baseStrategies(target)
+        : copy.strategy_id === target.strategy_id);
+    if (sameBase) {
       if (copy.name === target.name) return "linked";
       result = "uncertain";
     }

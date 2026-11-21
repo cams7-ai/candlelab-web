@@ -11,6 +11,10 @@ import {
 import type { BinanceInput, Candle, Dataset, Run, Session } from "../types";
 import { memberKey } from "../combinations";
 import {
+  findConfigurationUsage,
+  configurationDeletionBlocked,
+} from "../configurationUsage";
+import {
   candleDatasetName,
   parameterValue,
   strategyParameters,
@@ -451,8 +455,35 @@ export const handlers = [
     }
   }),
   http.delete(base + "/strategy-combinations/:id", ({ params }) => {
-    if (!store.combinations.some((c) => c.id === params.id))
-      return error(404, "Combinação não encontrada.");
+    const target = store.combinations.find((c) => c.id === params.id);
+    if (!target) return error(404, "Combinação não encontrada.");
+    const usage = findConfigurationUsage(
+      target,
+      store.combinations,
+      store.runs,
+    );
+    if (configurationDeletionBlocked(usage)) {
+      const configuration = target.kind === "strategy";
+      const noun = configuration ? "configuração" : "combinação";
+      return HttpResponse.json(
+        {
+          error: {
+            code: configuration ? "CONFIGURATION_IN_USE" : "COMBINATION_IN_USE",
+            message: `Esta ${noun} não pode ser excluída: existem vínculos ou cópias cuja origem não pode ser descartada.`,
+            details: [
+              {
+                field: "combination_id",
+                reason: `Remova os vínculos antes de excluir a ${noun}. Cópias sem identificador de origem exigem revisão.`,
+                runs: usage.runs,
+                combinations: usage.combinations,
+                uncertain_copies: usage.uncertainCopies,
+              },
+            ],
+          },
+        },
+        { status: 409 },
+      );
+    }
     store.combinations = store.combinations.filter((c) => c.id !== params.id);
     save();
     return new HttpResponse(null, { status: 204 });

@@ -195,7 +195,7 @@ it("mostra grupos e parâmetros preservados e abre a combinação para editar", 
   expect(screen.getByLabelText("Regra de venda")).toHaveValue("all");
 });
 
-it("cancela e confirma exclusão na lista, preservando o snapshot do processamento", async () => {
+it("cancela e bloqueia exclusão na lista quando há processamento vinculado", async () => {
   const saved = await api.saveCombination(definition());
   const run = await api.createRun(session.id, { combination_id: saved.id });
   render(<Strategies />);
@@ -206,23 +206,25 @@ it("cancela e confirma exclusão na lista, preservando o snapshot do processamen
   const dialog = screen.getByRole("alertdialog", {
     name: "Excluir combinação?",
   });
-  expect(dialog).toHaveTextContent("cópias incorporadas");
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent(run.id);
   await userEvent.click(
     within(dialog).getByRole("button", { name: "Cancelar" }),
   );
   expect(await api.combinations()).toHaveLength(1);
   await userEvent.click(remove);
+  expect(await screen.findByRole("alert")).toHaveTextContent(run.id);
+  expect(
+    screen.getByRole("button", { name: "Excluir combinação" }),
+  ).toBeDisabled();
   await userEvent.click(
     screen.getByRole("button", { name: "Excluir combinação" }),
   );
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("link", { name: "Minha combinação" }),
-    ).not.toBeInTheDocument(),
-  );
+  expect(
+    screen.getByRole("link", { name: "Minha combinação" }),
+  ).toBeInTheDocument();
   const historical = await request<Run>(`/runs/${run.id}`);
   expect(historical.combination_snapshot).toEqual(saved);
-  expect(await api.combinations()).toEqual([]);
+  expect(await api.combinations()).toEqual([saved]);
 });
 
 it("preserva o cadastro quando a exclusão falha e permite repetir pelos detalhes", async () => {
@@ -266,18 +268,17 @@ it("preserva o cadastro quando a exclusão falha e permite repetir pelos detalhe
   expect(await api.combinations()).toEqual([]);
 });
 
-it("mostra a exclusão antes dos parâmetros na tela de combinações", async () => {
-  await api.saveCombination(definition());
+it("mantém apenas o formulário na aba de combinações", async () => {
+  const saved = await api.saveCombination(definition());
   render(<Combinations navigate={vi.fn()} />);
+  await screen.findByLabelText("Nome da combinação");
   expect(
-    await screen.findByRole("button", { name: "Excluir Minha combinação" }),
-  ).toBeVisible();
+    screen.queryByRole("heading", { name: "Combinações cadastradas" }),
+  ).not.toBeInTheDocument();
   expect(
-    screen.getByRole("link", { name: "Ver detalhes de Minha combinação" }),
-  ).toBeVisible();
-  expect(
-    screen.getByText("Ver configuração de Minha combinação").closest("details"),
-  ).not.toHaveAttribute("open");
+    screen.queryByRole("button", { name: "Excluir Minha combinação" }),
+  ).not.toBeInTheDocument();
+  expect(await api.combinations()).toEqual([saved]);
 });
 
 it("exibe os parâmetros efetivos de uma receita cadastrada", async () => {

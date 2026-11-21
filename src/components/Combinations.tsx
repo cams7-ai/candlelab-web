@@ -7,19 +7,12 @@ import type {
   CombinationDefinition,
   CombinationMember,
   Strategy,
-  StrategyCombination,
 } from "../types";
 import { parameterLabel, parameterValue } from "../utils";
 import { compositionCompatible, memberKey, ruleLabel } from "../combinations";
-import { Empty, ErrorNotice, Loading } from "./common";
-import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
+import { ErrorNotice, Loading } from "./common";
 import { StrategyPicker } from "./StrategyPicker";
-import {
-  combinationPath,
-  strategyRole,
-  withStrategyReturn,
-  strategyWorkspacePath,
-} from "../strategies";
+import { combinationPath, strategyRole } from "../strategies";
 
 const empty = (): CombinationDefinition => ({
   name: "",
@@ -37,12 +30,10 @@ export function Combinations({
   editId,
   embedded = false,
   active: tabActive = true,
-  detailsReturnTo,
 }: {
   navigate: (path: string) => void;
   embedded?: boolean;
   active?: boolean;
-  detailsReturnTo?: string;
   returnTo?: string | null;
   editId?: string | null;
 }) {
@@ -60,12 +51,9 @@ export function Combinations({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   const [notice, setNotice] = useState("");
-  const [deleting, setDeleting] = useState<StrategyCombination>();
-  const [deleteError, setDeleteError] = useState<unknown>();
   useEffect(() => {
     if (!tabActive) {
       setPickerOpen(false);
-      setDeleting(undefined);
     }
   }, [tabActive]);
   const active = useRef<AbortController>();
@@ -316,28 +304,6 @@ export function Combinations({
       if (!controller.signal.aborted) setBusy(false);
     }
   }
-  async function remove() {
-    if (!deleting || busy) return;
-    const controller = new AbortController();
-    active.current = controller;
-    setBusy(true);
-    setDeleteError(undefined);
-    try {
-      await api.deleteCombination(deleting.id, controller.signal);
-      if (!controller.signal.aborted) {
-        if (editing === deleting.id) reset();
-        setDeleting(undefined);
-        setNotice(
-          "Combinação excluída. O histórico dos processamentos foi preservado.",
-        );
-        query.retry();
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) setDeleteError(err);
-    } finally {
-      if (!controller.signal.aborted) setBusy(false);
-    }
-  }
   return (
     <>
       {!embedded && (
@@ -361,7 +327,7 @@ export function Combinations({
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={query.retry} />
       ) : (
-        <div className="two-columns">
+        <div>
           <form className="panel form" onSubmit={save}>
             <h2>{editing ? "Editar combinação" : "Nova combinação"}</h2>
             <fieldset
@@ -665,74 +631,6 @@ export function Combinations({
               </button>
             </footer>
           </form>
-          <aside className="panel">
-            <h2>Combinações cadastradas</h2>
-            {!query.data?.combinations.some(
-              (item) => item.kind !== "strategy",
-            ) && <Empty>Nenhuma combinação cadastrada.</Empty>}
-            {query.data?.combinations
-              .filter((item) => item.kind !== "strategy")
-              .map((combination) => (
-                <article className="combination-member" key={combination.id}>
-                  <div className="saved-combination-heading">
-                    <div>
-                      <h3>{combination.name}</h3>
-                      <p className="muted">
-                        {combination.kind === "custom"
-                          ? "Combinação livre"
-                          : "Receita configurada"}
-                      </p>
-                    </div>
-                    <div className="actions saved-combination-actions">
-                      <a
-                        href={`#${withStrategyReturn(combinationPath(combination.id), detailsReturnTo ?? strategyWorkspacePath({ tab: "combinations" }))}`}
-                        aria-label={`Ver detalhes de ${combination.name}`}
-                      >
-                        <Icon name="details" />
-                        Ver detalhes
-                      </a>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          const { id, ...definition } = combination;
-                          setEditing(id);
-                          setDraft(structuredClone(definition));
-                          setError(undefined);
-                          setNotice("");
-                          nameInput.current?.focus();
-                        }}
-                      >
-                        <Icon name="edit" />
-                        Editar {combination.name}
-                      </button>
-                      <button
-                        type="button"
-                        className="danger-outline"
-                        disabled={busy}
-                        onClick={() => {
-                          setDeleting(combination);
-                          setDeleteError(undefined);
-                        }}
-                      >
-                        <Icon name="delete" />
-                        Excluir {combination.name}
-                      </button>
-                    </div>
-                  </div>
-                  <details className="saved-combination-config">
-                    <summary>
-                      <Icon name="parameters" />
-                      Ver configuração de {combination.name}
-                    </summary>
-                    <CombinationSummary
-                      combination={combination}
-                      strategies={strategies}
-                    />
-                  </details>
-                </article>
-              ))}
-          </aside>
         </div>
       )}
       {pickerOpen && (
@@ -743,19 +641,6 @@ export function Combinations({
           editingId={editing}
           onClose={() => setPickerOpen(false)}
           onAdd={addMembers}
-        />
-      )}
-      {deleting && (
-        <DeleteConfirmationDialog
-          targetId={deleting.id}
-          targetName={deleting.name}
-          title="Excluir combinação?"
-          description="A combinação deixará de estar disponível para novos processamentos. Processamentos anteriores e cópias incorporadas em outras combinações mantêm a configuração original."
-          confirmLabel="Excluir combinação"
-          busy={busy}
-          error={deleteError}
-          onCancel={() => setDeleting(undefined)}
-          onConfirm={remove}
         />
       )}
     </>

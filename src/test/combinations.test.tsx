@@ -62,7 +62,7 @@ async function configure(name: string) {
   if (!summary.closest("details")?.open) await userEvent.click(summary);
 }
 
-it("cadastra combinação livre, reabre, edita e exclui com confirmação", async () => {
+it("cadastra combinação livre e reabre para edição pelo identificador", async () => {
   const view = render(<Combinations navigate={vi.fn()} />);
   await screen.findByLabelText("Nome da combinação");
   await userEvent.type(
@@ -79,11 +79,15 @@ it("cadastra combinação livre, reabre, edita e exclui com confirmação", asyn
   await userEvent.click(
     screen.getByRole("button", { name: "Salvar combinação" }),
   );
-  await screen.findByRole("button", { name: "Editar SMA e EMA" });
-  view.unmount();
-  render(<Combinations navigate={vi.fn()} />);
-  await userEvent.click(
-    await screen.findByRole("button", { name: "Editar SMA e EMA" }),
+  await screen.findByText("Combinação “SMA e EMA” salva.");
+  const saved = (await api.combinations()).find(
+    (item) => item.name === "SMA e EMA",
+  )!;
+  view.rerender(<Combinations navigate={vi.fn()} editId={saved.id} />);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Nome da combinação")).toHaveValue(
+      "SMA e EMA",
+    ),
   );
   expect(screen.getByLabelText("Nome da combinação")).toHaveValue("SMA e EMA");
   expect(screen.getByLabelText("Regra de compra")).toHaveValue("any");
@@ -92,26 +96,10 @@ it("cadastra combinação livre, reabre, edita e exclui com confirmação", asyn
   await userEvent.click(
     screen.getByRole("button", { name: "Salvar combinação" }),
   );
-  await userEvent.click(
-    await screen.findByRole("button", { name: "Excluir Editada" }),
-  );
-  const dialog = screen.getByRole("alertdialog", {
-    name: "Excluir combinação?",
-  });
-  expect(dialog).toHaveTextContent("configuração original");
-  await userEvent.click(
-    within(dialog).getByRole("button", { name: "Cancelar" }),
-  );
+  await screen.findByText("Combinação “Editada” salva.");
   expect(
-    screen.getByRole("button", { name: "Excluir Editada" }),
-  ).toBeInTheDocument();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Excluir Editada" }),
-  );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Excluir combinação" }),
-  );
-  await screen.findByText("Nenhuma combinação cadastrada.");
+    (await api.combinations()).find((item) => item.id === saved.id)?.name,
+  ).toBe("Editada");
 });
 
 it("salva parâmetros de uma combinação publicada e retorna ao novo processamento", async () => {
@@ -218,14 +206,17 @@ it("seleciona combinação e envia somente seu ID para iniciar processamento", a
   expect(sent).toEqual({ combination_id: saved.id });
 });
 
-it("mantém o snapshot do processamento após editar e excluir cadastro no demo", async () => {
+it("mantém o snapshot e bloqueia a exclusão do cadastro vinculado no demo", async () => {
   const saved = await api.saveCombination(definition());
   const run = await api.createRun(session.id, { combination_id: saved.id });
   await api.saveCombination(
     { ...definition("Novo nome"), buy_rule: "any" },
     saved.id,
   );
-  await api.deleteCombination(saved.id);
+  await expect(api.deleteCombination(saved.id)).rejects.toMatchObject({
+    status: 409,
+    body: { error: { code: "COMBINATION_IN_USE" } },
+  });
   const historical = await request<Run>(`/runs/${run.id}`);
   expect(historical.combination_snapshot).toEqual(saved);
   expect(runStrategyName(historical)).toBe("SMA e EMA");
@@ -316,7 +307,7 @@ it("importa componentes em um novo cadastro sem alterar a origem ou suas regras"
   await userEvent.click(
     screen.getByRole("button", { name: "Salvar combinação" }),
   );
-  await screen.findByRole("button", { name: "Editar Derivada" });
+  await screen.findByText("Combinação “Derivada” salva.");
   const saved = await api.combinations();
   expect(saved.find((item) => item.id === original.id)).toEqual(original);
   const derived = saved.find((item) => item.name === "Derivada")!;
@@ -445,7 +436,7 @@ it("adiciona uma combinação como grupo preservando regras e snapshots após al
   await userEvent.click(
     screen.getByRole("button", { name: "Salvar combinação" }),
   );
-  await screen.findByRole("button", { name: "Editar Composta" });
+  await screen.findByText("Combinação “Composta” salva.");
   const saved = (await api.combinations()).find(
     (item) => item.name === "Composta",
   )!;
@@ -454,7 +445,10 @@ it("adiciona uma combinação como grupo preservando regras e snapshots após al
   expect(saved.buy_rule).toBe("all");
   const run = await api.createRun(session.id, { combination_id: saved.id });
   await api.saveCombination(definition("Origem editada"), original.id);
-  await api.deleteCombination(original.id);
+  await expect(api.deleteCombination(original.id)).rejects.toMatchObject({
+    status: 409,
+    body: { error: { code: "COMBINATION_IN_USE" } },
+  });
   const historical = await request<Run>(`/runs/${run.id}`);
   expect(historical.combination_snapshot).toEqual(saved);
   expect(runParameters(historical)).toContainEqual([
@@ -484,7 +478,7 @@ it("reutiliza uma combinação publicada como grupo e mostra seus componentes in
   await userEvent.click(
     screen.getByRole("button", { name: "Salvar combinação" }),
   );
-  await screen.findByRole("button", { name: "Editar MACD com SMA" });
+  await screen.findByText("Combinação “MACD com SMA” salva.");
   const saved = (await api.combinations()).find(
     (item) => item.name === "MACD com SMA",
   )!;

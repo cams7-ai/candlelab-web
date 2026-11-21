@@ -23,7 +23,7 @@ export function useCombinationDeletion(
   const active = useRef<AbortController>();
   useEffect(() => () => active.current?.abort(), []);
   useEffect(() => {
-    if (target?.kind !== "strategy") return;
+    if (!target) return;
     const controller = new AbortController();
     setValidation(undefined);
     api.configurationUsage(target, controller.signal).then(
@@ -37,26 +37,24 @@ export function useCombinationDeletion(
     return () => controller.abort();
   }, [target?.id, revision]);
   const usage = validation?.id === target?.id ? validation?.usage : undefined;
-  const protectedTarget = target?.kind === "strategy";
-  const blocked =
-    protectedTarget && (!usage || configurationDeletionBlocked(usage));
+  const isConfiguration = target?.kind === "strategy";
+  const noun = isConfiguration ? "configuração" : "combinação";
+  const blocked = !usage || configurationDeletionBlocked(usage);
   async function confirm() {
     if (!target || busy || blocked) return;
     const controller = new AbortController();
     active.current = controller;
     setBusy(true);
-    setCheckingBeforeDelete(protectedTarget);
+    setCheckingBeforeDelete(true);
     setError(undefined);
-    let checking = protectedTarget;
+    let checking = true;
     try {
       // Refresh immediately before deletion: links may have changed while the
       // confirmation dialog was open.
-      if (protectedTarget) {
-        const latest = await api.configurationUsage(target, controller.signal);
-        if (controller.signal.aborted) return;
-        setValidation({ id: target.id, usage: latest });
-        if (configurationDeletionBlocked(latest)) return;
-      }
+      const latest = await api.configurationUsage(target, controller.signal);
+      if (controller.signal.aborted) return;
+      setValidation({ id: target.id, usage: latest });
+      if (configurationDeletionBlocked(latest)) return;
       checking = false;
       setCheckingBeforeDelete(false);
       await api.deleteCombination(target.id, controller.signal);
@@ -93,25 +91,20 @@ export function useCombinationDeletion(
         targetId={target.id}
         targetName={target.name}
         title={
-          protectedTarget ? "Excluir configuração?" : "Excluir combinação?"
+          isConfiguration ? "Excluir configuração?" : "Excluir combinação?"
         }
-        description={
-          protectedTarget
-            ? "A configuração só pode ser excluída quando não estiver vinculada a processamentos ou incorporada em combinações."
-            : "A combinação deixará de estar disponível para novos processamentos. Processamentos anteriores e cópias incorporadas em outras combinações mantêm a configuração original."
-        }
+        description={`A ${noun} só pode ser excluída quando não estiver vinculada a processamentos ou incorporada em combinações.`}
         confirmLabel={
-          protectedTarget ? "Excluir configuração" : "Excluir combinação"
+          isConfiguration ? "Excluir configuração" : "Excluir combinação"
         }
         busy={busy}
         busyLabel={checkingBeforeDelete ? "Verificando vínculos…" : undefined}
         confirmDisabled={blocked}
         validation={
-          protectedTarget &&
-          (!validation || validation.id !== target.id ? (
+          !validation || validation.id !== target.id ? (
             <p role="status">
               <Icon name="loading" spin />
-              Verificando vínculos da configuração…
+              Verificando vínculos da {noun}…
             </p>
           ) : validation.error ? (
             <div>
@@ -125,7 +118,7 @@ export function useCombinationDeletion(
             <div className="deletion-warning" role="alert">
               <p>
                 <Icon name="warning" />
-                Esta configuração não pode ser excluída.
+                Esta {noun} não pode ser excluída.
               </p>
               {!!usage.runs.length && (
                 <p>
@@ -135,7 +128,7 @@ export function useCombinationDeletion(
               )}
               {!!usage.combinations.length && (
                 <p>
-                  Combinações que incorporam esta configuração:{" "}
+                  Combinações que incorporam esta {noun}:{" "}
                   {usage.combinations.slice(0, 3).join(", ")}
                   {usage.combinations.length > 3
                     ? ` e mais ${usage.combinations.length - 3}`
@@ -145,9 +138,10 @@ export function useCombinationDeletion(
               )}
               {!!usage.uncertainCopies.length && (
                 <p>
-                  Há cópias da mesma estratégia base sem identificador de
-                  origem. Não é possível descartar um vínculo com esta
-                  configuração. Revise essas cópias antes de excluir:{" "}
+                  Há cópias da mesma{" "}
+                  {isConfiguration ? "estratégia" : "composição"} base sem
+                  identificador de origem. Não é possível descartar um vínculo
+                  com esta {noun}. Revise essas cópias antes de excluir:{" "}
                   {usage.uncertainCopies.slice(0, 3).join("; ")}.
                 </p>
               )}
@@ -156,7 +150,7 @@ export function useCombinationDeletion(
                 Verificar vínculos novamente
               </button>
             </div>
-          ) : null)
+          ) : null
         }
         error={error}
         onCancel={() => setTarget(undefined)}

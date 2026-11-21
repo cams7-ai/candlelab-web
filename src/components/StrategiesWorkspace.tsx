@@ -2,11 +2,7 @@ import { Icon } from "./Icon";
 import { useEffect, useRef, useState } from "react";
 import { Strategies } from "./Strategies";
 import { Combinations } from "./Combinations";
-import {
-  strategyWorkspacePath,
-  type StrategiesTab,
-  type StrategyFilters,
-} from "../strategies";
+import { type StrategiesTab, type StrategyFilters } from "../strategies";
 
 export function StrategiesWorkspace({
   tab,
@@ -37,11 +33,6 @@ export function StrategiesWorkspace({
     returnTo && /^\/sessions\/[^/]+\/runs\/new$/.test(returnTo)
       ? returnTo
       : undefined;
-  const combinationsPath = strategyWorkspacePath({
-    filters,
-    tab: "combinations",
-    returnTo,
-  });
   return (
     <>
       {processingReturnTo && (
@@ -133,7 +124,6 @@ export function StrategiesWorkspace({
             navigate={navigate}
             editId={editId}
             returnTo={returnTo}
-            detailsReturnTo={combinationsPath}
           />
         )}
       </section>

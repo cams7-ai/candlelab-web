@@ -289,7 +289,7 @@ it("reutiliza uma configuração de filtro em combinação com seu papel preserv
   await userEvent.click(
     screen.getByRole("button", { name: "Salvar combinação" }),
   );
-  await screen.findByRole("button", { name: "Editar Sinal com ADX" });
+  await screen.findByText("Combinação “Sinal com ADX” salva.");
   const combo = (await api.combinations()).find(
     (item) => item.name === "Sinal com ADX",
   )!;

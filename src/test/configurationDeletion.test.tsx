@@ -132,7 +132,12 @@ it("verifica a composição preservada nos processamentos mesmo depois de exclui
     group("Grupo histórico", copy(saved)),
   );
   const run = await api.createRun(session.id, { combination_id: combined.id });
-  await api.deleteCombination(combined.id);
+  // Simulate a group removed by an older API, preserving its run snapshot.
+  server.use(
+    http.get(apiBase + "/strategy-combinations", () =>
+      HttpResponse.json({ items: [saved], next_cursor: null }),
+    ),
+  );
   const remove = watchDeletion();
   const dialog = await open();
   expect(await dialog.findByRole("alert")).toHaveTextContent(run.id);

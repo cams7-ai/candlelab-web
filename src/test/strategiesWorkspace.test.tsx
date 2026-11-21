@@ -67,7 +67,7 @@ it("preserva filtros e rascunho ao alternar abas e atualiza o catálogo após sa
   await userEvent.click(
     screen.getByRole("button", { name: "Salvar combinação" }),
   );
-  await screen.findByRole("button", { name: "Editar Rascunho" });
+  await screen.findByText("Combinação “Rascunho” salva.");
   await userEvent.click(screen.getByRole("tab", { name: "Catálogo" }));
   await screen.findByRole("searchbox", { name: "Buscar estratégias" });
   await userEvent.clear(screen.getByLabelText("Buscar estratégias"));
@@ -123,16 +123,22 @@ it("abre a aba pelo novo processamento e volta a ela a partir dos detalhes", asy
     "aria-selected",
     "true",
   );
-  const pane = screen.getByRole("tabpanel", { name: "Combinações" });
+  expect(
+    screen.queryByRole("heading", { name: "Combinações cadastradas" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("tab", { name: "Catálogo" }));
+  const pane = await screen.findByRole("tabpanel", { name: "Catálogo" });
   await userEvent.click(
     within(pane).getByRole("link", {
-      name: "Ver detalhes de Minha combinação",
+      name: "Minha combinação",
     }),
   );
   await screen.findByRole("heading", { level: 1, name: "Minha combinação" });
   await userEvent.click(
-    screen.getByRole("link", { name: "Voltar às combinações" }),
+    screen.getByRole("link", { name: "Voltar à lista de estratégias" }),
   );
+  await screen.findByLabelText("Buscar estratégias");
+  await userEvent.click(screen.getByRole("tab", { name: "Combinações" }));
   expect(
     await screen.findByLabelText("Nome da combinação"),
   ).toBeInTheDocument();

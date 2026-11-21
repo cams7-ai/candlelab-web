@@ -1401,31 +1401,6 @@ textarea {
   background: #0c1c26;
   color: #a7dfd7;
 }
-.saved-combination-heading h3 {
-  margin: 0 0 6px;
-  font-size: 18px;
-}
-.saved-combination-heading p {
-  margin: 0 0 14px;
-}
-.saved-combination-actions {
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.saved-combination-actions button {
-  white-space: normal;
-  font-size: 13px;
-}
-.saved-combination-config {
-  margin-top: 16px;
-  border-top: 1px solid #2e4453;
-  padding-top: 12px;
-}
-.saved-combination-config summary {
-  cursor: pointer;
-  color: #b8cbd7;
-  font-size: 13px;
-}
 @media (max-width: 700px) {
   .catalog-toolbar {
     grid-template-columns: 1fr;
