@@ -1,5 +1,6 @@
+import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { allPages, api, resource } from "../api";
+import { allPages, api, ApiError } from "../api";
 import { useQuery } from "../hooks";
 import type { Dataset, Session, Run } from "../types";
 import {
@@ -15,6 +16,13 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Session>();
   const [deleting, setDeleting] = useState(false);
+  const [checkingBeforeDelete, setCheckingBeforeDelete] = useState(false);
+  const [validation, setValidation] = useState<{
+    id: string;
+    runs?: Run[];
+    error?: unknown;
+  }>();
+  const [revision, setRevision] = useState(0);
   const [deleteError, setDeleteError] = useState<unknown>();
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const activeDelete = useRef<AbortController>();
@@ -26,11 +34,7 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
     ]);
     const counts = await Promise.all(
       sessions.map((s) =>
-        allPages<Run>(
-          `/sessions/${resource(s.id)}/runs`,
-          signal,
-          (r) => r.id,
-        ).then((r) => [s.id, r.length] as const),
+        api.sessionRuns(s.id, signal).then((r) => [s.id, r.length] as const),
       ),
     );
     return { sessions, datasets, counts: new Map(counts) };
@@ -41,21 +45,64 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
         !deletedIds.includes(s.id) &&
         s.name.toLowerCase().includes(search.toLowerCase()),
     ) ?? [];
+  useEffect(() => {
+    if (!deleteTarget) return;
+    const controller = new AbortController();
+    setValidation(undefined);
+    api.sessionRuns(deleteTarget.id, controller.signal).then(
+      (runs) => {
+        if (!controller.signal.aborted)
+          setValidation({ id: deleteTarget.id, runs });
+      },
+      (error) => {
+        if (!controller.signal.aborted)
+          setValidation({ id: deleteTarget.id, error });
+      },
+    );
+    return () => controller.abort();
+  }, [deleteTarget?.id, revision]);
+  const linkedRuns =
+    validation?.id === deleteTarget?.id ? validation?.runs : undefined;
+  const blocked = !linkedRuns || linkedRuns.length > 0;
+  const retryValidation = () => {
+    setDeleteError(undefined);
+    setValidation(undefined);
+    setRevision((value) => value + 1);
+  };
   async function deleteSession() {
-    if (!deleteTarget || deleting) return;
+    if (!deleteTarget || deleting || blocked) return;
     const controller = new AbortController();
     activeDelete.current = controller;
     setDeleting(true);
+    setCheckingBeforeDelete(true);
     setDeleteError(undefined);
+    let checking = true;
     try {
+      const runs = await api.sessionRuns(deleteTarget.id, controller.signal);
+      if (controller.signal.aborted) return;
+      setValidation({ id: deleteTarget.id, runs });
+      if (runs.length) return;
+      checking = false;
+      setCheckingBeforeDelete(false);
       await api.deleteSession(deleteTarget.id, controller.signal);
       if (controller.signal.aborted) return;
       setDeletedIds((previous) => [...previous, deleteTarget.id]);
       setDeleteTarget(undefined);
     } catch (error) {
-      if (!controller.signal.aborted) setDeleteError(error);
+      if (!controller.signal.aborted) {
+        if (
+          checking ||
+          (error instanceof ApiError &&
+            error.body.error.code === "SESSION_IN_USE")
+        )
+          setValidation({ id: deleteTarget.id, error });
+        else setDeleteError(error);
+      }
     } finally {
-      if (!controller.signal.aborted) setDeleting(false);
+      if (!controller.signal.aborted) {
+        setDeleting(false);
+        setCheckingBeforeDelete(false);
+      }
     }
   }
   return (
@@ -65,9 +112,50 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
           targetId={deleteTarget.id}
           targetName={deleteTarget.name}
           title="Excluir sessão?"
-          description="A sessão e todos os seus processamentos, resultados e relatórios serão removidos permanentemente. Esta ação não pode ser desfeita."
+          description="A sessão só pode ser excluída quando não houver processamentos vinculados. A exclusão não pode ser desfeita."
           confirmLabel="Excluir sessão"
           busy={deleting}
+          busyLabel={checkingBeforeDelete ? "Verificando vínculos…" : undefined}
+          confirmDisabled={blocked}
+          validation={
+            !validation || validation.id !== deleteTarget.id ? (
+              <p role="status">
+                <Icon name="loading" spin />
+                Verificando processamentos vinculados…
+              </p>
+            ) : validation.error ? (
+              <div>
+                <p>
+                  A exclusão permanece desabilitada porque não foi possível
+                  confirmar a ausência de processamentos.
+                </p>
+                <ErrorNotice error={validation.error} retry={retryValidation} />
+              </div>
+            ) : linkedRuns?.length ? (
+              <div className="deletion-warning" role="alert">
+                <p>
+                  <Icon name="warning" />
+                  Esta sessão não pode ser excluída.
+                </p>
+                <p>
+                  Processamentos vinculados: {linkedRuns.length}.{" "}
+                  {linkedRuns
+                    .slice(0, 3)
+                    .map((run) => run.id)
+                    .join(", ")}
+                  {linkedRuns.length > 3
+                    ? ` e mais ${linkedRuns.length - 3}`
+                    : ""}
+                  .
+                </p>
+                <p>Remova os processamentos antes de excluir a sessão.</p>
+                <button type="button" onClick={retryValidation}>
+                  <Icon name="refresh" />
+                  Verificar vínculos novamente
+                </button>
+              </div>
+            ) : null
+          }
           error={deleteError}
           onCancel={() => setDeleteTarget(undefined)}
           onConfirm={() => void deleteSession()}
@@ -79,14 +167,18 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
           <h1>Sessões</h1>
         </div>
         <div className="actions">
-          <input
-            aria-label="Buscar sessão"
-            placeholder="⌕  Buscar sessão"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <span className="search-field">
+            <Icon name="search" standalone />
+            <input
+              aria-label="Buscar sessão"
+              placeholder="Buscar sessão"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </span>
           <button className="primary" onClick={() => navigate("/sessions/new")}>
-            ＋ Nova sessão
+            <Icon name="add" />
+            Nova sessão
           </button>
         </div>
       </header>
@@ -137,9 +229,11 @@ export function Sessions({ navigate }: { navigate: (path: string) => void }) {
                           disabled={deleting}
                           onClick={() => {
                             setDeleteError(undefined);
+                            setValidation(undefined);
                             setDeleteTarget(s);
                           }}
                         >
+                          <Icon name="delete" />
                           Excluir
                         </button>
                       </td>
@@ -274,9 +368,11 @@ export function NewSession({
             {error != null && <ErrorNotice error={error} />}
             <footer className="actions">
               <button type="button" onClick={() => navigate("/sessions")}>
+                <Icon name="cancel" />
                 Cancelar
               </button>
               <button className="primary" disabled={busy || !dataset}>
+                <Icon name={busy ? "loading" : "add"} spin={busy} />
                 {busy ? "Criando…" : "Criar sessão"}
               </button>
             </footer>

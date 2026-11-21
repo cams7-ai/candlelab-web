@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { Icon } from "./Icon";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ErrorNotice } from "./common";
 
@@ -12,6 +13,9 @@ export function DeleteConfirmationDialog({
   error,
   onCancel,
   onConfirm,
+  validation,
+  confirmDisabled = false,
+  busyLabel = "Excluindo…",
 }: {
   targetId: string;
   targetName: string;
@@ -22,6 +26,9 @@ export function DeleteConfirmationDialog({
   error: unknown;
   onCancel: () => void;
   onConfirm: () => void;
+  validation?: ReactNode;
+  confirmDisabled?: boolean;
+  busyLabel?: string;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -87,25 +94,31 @@ export function DeleteConfirmationDialog({
         }}
       >
         <div className="delete-dialog-content">
-          <h2 id="delete-confirmation-title">{title}</h2>
+          <h2 id="delete-confirmation-title">
+            <Icon name="warning" />
+            {title}
+          </h2>
           <p id="delete-confirmation-description">{description}</p>
           <div className="delete-dialog-target">
             <strong>{targetName}</strong>
             <span>{targetId}</span>
           </div>
+          {validation}
           {error != null && <ErrorNotice error={error} />}
         </div>
         <footer className="delete-dialog-actions">
           <button ref={cancel} type="button" disabled={busy} onClick={onCancel}>
+            <Icon name="cancel" />
             Cancelar
           </button>
           <button
             type="button"
             className="danger-button"
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
           >
-            {busy ? "Excluindo…" : confirmLabel}
+            <Icon name={busy ? "loading" : "delete"} spin={busy} />
+            {busy ? busyLabel : confirmLabel}
           </button>
         </footer>
       </div>

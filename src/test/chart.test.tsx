@@ -42,7 +42,75 @@ vi.mock("lightweight-charts", () => ({
     setMarkers: mocks.setMarkers,
   })),
 }));
+import type { Run } from "../types";
 import { Chart, chartTime, markersFor } from "../components/Chart";
+it("separa RSI de cada membro e usa seus limiares sem misturar com o preço", () => {
+  const run: Run = {
+    ...runs[0],
+    strategy_id: "CUSTOM_COMBINATION@1",
+    parameters: { definition_json: "{}" },
+    combination_snapshot: {
+      id: "snapshot",
+      name: "SMA e RSI",
+      kind: "custom" as const,
+      strategy_id: null,
+      parameters: {},
+      buy_rule: "all" as const,
+      sell_rule: "any" as const,
+      members: [
+        {
+          strategy_id: "SMA_CROSS@1",
+          parameters: { short_window: 2, long_window: 3 },
+        },
+        {
+          strategy_id: "RSI_REVERSION@1",
+          parameters: { period: 3, oversold: "25", overbought: "75" },
+        },
+      ],
+    },
+  };
+  render(
+    <Chart
+      candles={candles}
+      indicators={[
+        {
+          open_time_ms: candles[0].open_time_ms,
+          values: { member_1__sma_short: "100", member_2__rsi: null },
+        },
+        {
+          open_time_ms: candles[1].open_time_ms,
+          values: { member_1__sma_short: "102", member_2__rsi: "30" },
+        },
+      ]}
+      events={[]}
+      equity={[]}
+      run={run}
+      signals
+      fills
+    />,
+  );
+  const calls = mocks.chart.addSeries.mock.calls as unknown[][];
+  const sma = calls.find(
+    (call) => (call[1] as { title?: string })?.title === "member_1__sma_short",
+  );
+  const rsi = calls.find(
+    (call) => (call[1] as { title?: string })?.title === "member_2__rsi",
+  );
+  expect(sma?.[2]).toBe(0);
+  expect(rsi?.[2]).toBe(1);
+  expect(
+    (
+      rsi?.[1] as { autoscaleInfoProvider: () => unknown }
+    ).autoscaleInfoProvider(),
+  ).toEqual({ priceRange: { minValue: 0, maxValue: 100 } });
+  const lines = mocks.lines.find((line) =>
+    line.createPriceLine.mock.calls.some(([options]) => options.price === 25),
+  )!;
+  expect(lines.createPriceLine).toHaveBeenCalledWith(
+    expect.objectContaining({ price: 75 }),
+  );
+  expect(lines.setData.mock.calls[0][0][0]).not.toHaveProperty("value");
+});
 it("preserva o zoom e a posição ao alternar sinais e execuções", () => {
   const data = makeSeries(runs[0], candles);
   const view = render(
@@ -162,4 +230,75 @@ it("mantém fills ETH no histórico sem plotá-los na escala de BTC", () => {
     },
   ];
   expect(markersFor(events, true, true)).toEqual([]);
+});
+
+it("separa RSI aninhado e usa os limiares do membro interno", () => {
+  const run: Run = {
+    ...runs[0],
+    combination_snapshot: {
+      id: "outer",
+      name: "Grupo externo",
+      kind: "custom",
+      strategy_id: null,
+      parameters: {},
+      buy_rule: "all",
+      sell_rule: "any",
+      members: [
+        {
+          strategy_id: "",
+          parameters: {},
+          combination: {
+            name: "Grupo RSI",
+            kind: "custom",
+            strategy_id: null,
+            parameters: {},
+            buy_rule: "any",
+            sell_rule: "all",
+            members: [
+              { strategy_id: "SMA_CROSS@1", parameters: {} },
+              {
+                strategy_id: "RSI_REVERSION@1",
+                parameters: { oversold: "27", overbought: "73" },
+              },
+            ],
+          },
+        },
+        { strategy_id: "EMA_CROSS@1", parameters: {} },
+      ],
+    },
+  };
+  const startIndex = mocks.chart.addSeries.mock.calls.length;
+  render(
+    <Chart
+      candles={candles}
+      indicators={[
+        {
+          open_time_ms: candles[0].open_time_ms,
+          values: { member_1__member_2__rsi: "35" },
+        },
+      ]}
+      events={[]}
+      equity={[]}
+      run={run}
+      signals
+      fills
+    />,
+  );
+  const calls = mocks.chart.addSeries.mock.calls.slice(
+    startIndex,
+  ) as unknown[][];
+  const rsiIndex = calls.findIndex(
+    (call) =>
+      (call[1] as { title?: string })?.title === "member_1__member_2__rsi",
+  );
+  expect(rsiIndex).toBeGreaterThanOrEqual(0);
+  expect(calls[rsiIndex][2]).toBeGreaterThan(0);
+  const series =
+    mocks.chart.addSeries.mock.results[startIndex + rsiIndex].value;
+  expect(series.createPriceLine).toHaveBeenCalledWith(
+    expect.objectContaining({ price: 27 }),
+  );
+  expect(series.createPriceLine).toHaveBeenCalledWith(
+    expect.objectContaining({ price: 73 }),
+  );
 });

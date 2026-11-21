@@ -1,4 +1,4 @@
-# CandleLab Web 0.2.0
+# CandleLab Web 0.3.0
 
 Interface em português para um laboratório local de backtest histórico Binance Spot, feita com React, TypeScript, Vite e **lightweight-charts 5.2.0** (versão fixada no manifesto e em `yarn.lock`). Consome o contrato HTTP v1 descrito em [docs/prompt_261114.md](docs/prompt_261114.md).
 
@@ -24,7 +24,7 @@ yarn dev
 
 Abra <http://localhost:5173>. O modo normal utiliza a API real em `http://localhost:8000/api/v1`; não há troca automática para dados fictícios em caso de erro. Configure `VITE_API_BASE_URL` em `.env.local` com a **origem**, sem o sufixo `/api/v1`, e reinicie o Vite após mudanças.
 
-A API fica em outro repositório. Autorize a origem `http://localhost:5173` no CORS do backend, incluindo os métodos GET/POST e os cabeçalhos `Content-Type` e `Idempotency-Key`. No desenvolvimento, a porta é fixa para que a origem não mude silenciosamente. A aplicação não precisa de chaves Binance: a aquisição externa é feita pela API.
+A API fica em outro repositório. Autorize a origem `http://localhost:5173` no CORS do backend, incluindo os métodos GET/POST/PUT/DELETE e os cabeçalhos `Content-Type` e `Idempotency-Key`. No desenvolvimento, a porta é fixa para que a origem não mude silenciosamente. A aplicação não precisa de chaves Binance: a aquisição externa é feita pela API.
 
 ## Demonstração independente da API
 
@@ -125,3 +125,58 @@ Veja os [resultados de validação 0.2.0](docs/validacao_v0.2.0.md).
 O [prompt desta versão](docs/prompt_261116_v0.2.0.md) foi criado antes das alterações e executado neste projeto. Consulte o [guia de estratégias e importação](docs/estrategias_v0.2.0.md) para as 18 novas opções, regras, padrões e hipóteses de execução. As quatro opções anteriores permanecem disponíveis. A entrada auxiliar é importada por processamento, com snapshot persistido e validação de cobertura temporal; não há dados externos fabricados automaticamente. Suporte adicional a candles de 1 hora.
 
 Veja os [resultados de validação 0.2.0](docs/validacao_v0.2.0.md).
+
+## Combinações reutilizáveis — 0.3.0
+
+O [prompt desta atualização](docs/prompt_261119_v0.3.0.md) foi escrito após analisar Web e API e antes de implementar. Resultados em [validação 0.3.0](docs/validacao_v0.3.0.md).
+
+Em **Estratégias → Combinações**, cadastre um nome e escolha:
+
+- **Combinação livre**: de 2 a 8 estratégias distintas compatíveis, com parâmetros próprios e regras independentes de compra e venda: **Todas** ou **Qualquer uma**.
+- **Configuração de combinação existente**: escolha uma das seis combinações publicadas e salve seus parâmetros. Quando exigidos, informe os dados auxiliares JSON correspondentes ao dataset que será usado.
+
+Os sinais da composição livre precisam ocorrer no mesmo candle, após o aquecimento de todos os componentes. Em conflito, venda tem prioridade. Stops dos componentes participam da regra de venda escolhida. Todos os componentes observam os fills de uma única carteira Spot, com execução na abertura seguinte. DCA, grades e estratégias com dados externos ou carteiras especiais não participam da composição livre; a elegibilidade vem de `combinable` no catálogo da API.
+
+Abra uma sessão, clique em **Novo processamento**, marque **Configuração ou combinação salva**, abra o seletor com busca, confirme em **Usar configuração** e inicie. O link **Cadastrar ou gerenciar combinações** retorna ao processamento com a combinação recém-salva selecionada. É possível editar ou excluir cadastros com confirmação. Os nomes, regras, componentes e parâmetros históricos ficam no snapshot da execução e são usados no detalhe, comparação e PDF, mesmo depois de alterar ou excluir o cadastro.
+
+Requer a API 0.3.0 e o worker atualizado. O frontend consome `/api/v1/strategy-combinations` e envia `{ "combination_id": "..." }` na criação do processamento. Os cadastros reais ficam no MongoDB. O demo persiste seus próprios cadastros no navegador e continua oferecendo apenas resultados sintéticos. Reinicie API, worker e Vite após atualizar ambos os projetos.
+
+### Componentes reutilizáveis e grupos
+
+As receitas existentes agora compartilham componentes individuais de sinal, filtro e saída. Em **Estratégias → Combinações**, use **Adicionar estratégia** para escolher componentes e a categoria **Combinações cadastradas** no mesmo painel para incorporar uma cópia de outra combinação compatível com suas regras internas. Editar ou excluir a origem não altera o grupo incorporado. O catálogo e os cadastros anteriores continuam válidos; as restrições de execução Spot são mantidas.
+
+Consulte o [guia de composição](docs/composicao_estrategias.md) para os papéis dos componentes, parâmetros, limites, compatibilidade e validação. Reinicie API, worker e frontend após atualizar os dois projetos.
+
+### Catálogo e detalhes das estratégias
+
+O menu **Estratégias** abre `#/strategies`, com as abas **Catálogo** e **Combinações**, seguindo o padrão visual de **Candles**. O catálogo reúne todas as estratégias e configurações salvas; a aba **Combinações** permite cadastrar e gerenciar combinações. A busca aceita nome, função, regras e identificador; o filtro separa estratégias individuais, combinações prontas e cadastros. No Catálogo, clique no nome da estratégia para consultar regras, limitações, parâmetros padrão, dados auxiliares necessários e componentes da receita. A coluna **Ações** aparece apenas quando os resultados visíveis contêm cadastros que podem ser excluídos. O retorno é contextual: **Voltar à lista de estratégias** mantém os filtros da origem; ao abrir um componente a partir de outro detalhe, **Voltar aos detalhes de [nome]** retorna à estratégia ou combinação anterior, inclusive após recarregar a página. Os detalhes de uma combinação cadastrada exibem os parâmetros salvos e os grupos incorporados com suas regras.
+
+Combinações cadastradas podem ser editadas e excluídas a partir dos detalhes, ou excluídas diretamente na lista. A aba **Estratégias → Combinações** também mantém as ações visíveis antes dos parâmetros recolhidos. A exclusão exige confirmação, mantém o histórico dos processamentos e preserva as cópias incorporadas em outros grupos. Os padrões publicados do catálogo são preservados; use **Criar configuração personalizada** para salvar seus próprios valores.
+
+### Configurações personalizadas de estratégias
+
+Em **Estratégias → Detalhes**, clique em **Criar configuração personalizada**. Informe um nome, ajuste os parâmetros e salve. A ação **Restaurar padrões** repõe os valores do catálogo no formulário; o catálogo permanece inalterado. Configurações salvas podem ser reabertas, editadas e excluídas. O filtro **Configurações personalizadas** permite encontrá-las na lista.
+
+No **Novo processamento**, escolha **Configuração ou combinação salva** e abra o painel de seleção. Busque por nome, estratégia base ou identificador, filtre por configurações personalizadas, receitas ou combinações livres e confirme em **Usar configuração**. Cancelar preserva o cadastro anterior; os dados auxiliares JSON aparecem como contagem de observações e podem ser inspecionados em **Ver dados auxiliares**, inicialmente recolhidos. Configurações de filtros e saídas são reutilizáveis no painel **Adicionar estratégia → Configurações personalizadas**, quando compatíveis; não são oferecidas para execução individual. Dados auxiliares JSON continuam específicos dos timestamps do dataset.
+
+Os valores são persistidos pela API e cada processamento guarda seu snapshot, preservado após edição ou exclusão. O contrato `/strategy-combinations` aceita o tipo adicional `strategy` para estratégias individuais/clássicas, mantendo `preset` para receitas publicadas e `custom` para combinações livres. Atualize e reinicie API, worker e frontend juntos; cadastros anteriores não exigem migração.
+
+A aba de combinações tem endereço `#/strategies?tab=combinations`. Os atalhos de edição e de retorno ao novo processamento abrem essa aba com seus parâmetros; o endereço antigo `#/combinations` continua aceito e é atualizado automaticamente. A troca entre abas preserva os filtros do catálogo e o rascunho da combinação em preenchimento.
+
+## Ícones da interface
+
+A interface usa [Bootstrap Icons](https://icons.getbootstrap.com/) 1.13.2, gratuito sob a [licença MIT](https://github.com/twbs/icons/blob/main/LICENSE), sem depender do framework Bootstrap. O CSS e as fontes são distribuídos localmente pelo Vite, sem CDN. A licença acompanha o build em `public/licenses/bootstrap-icons.txt`.
+
+Use o componente `Icon` de `src/components/Icon.tsx` com um nome semântico (por exemplo, `add`, `delete`, `parameters` ou `run`) para manter a mesma ação reconhecível em todas as telas. Os ícones decorativos usam `aria-hidden`, os controles preservam seus rótulos e a animação de carregamento respeita a preferência por movimento reduzido.
+
+## Listagem e exclusão de candles
+
+A aba **Candles carregados** exibe a tabela ao lado do painel **Conjunto selecionado** em telas maiores, empilhando os painéis em telas menores. A listagem oferece busca por nome, par ou identificador, filtro por intervalo, contagem de resultados e ações no mesmo padrão do Catálogo de estratégias. Clique no nome do conjunto para selecioná-lo e criar uma sessão. A coluna **Ações** oferece somente a exclusão.
+
+O popup de exclusão consulta todas as páginas de sessões e desabilita a confirmação enquanto verifica, quando há vínculos ou se a consulta falha. A checagem é repetida antes de enviar DELETE. A API e o modo demo também rejeitam conjuntos vinculados com HTTP 409 `DATASET_IN_USE`; excluir candles não remove sessões ou processamentos em cascata.
+
+## Exclusão de sessões
+
+Antes de excluir uma sessão, o popup consulta todos os seus processamentos, incluindo as páginas seguintes, e mantém a confirmação desabilitada durante a consulta, em caso de falha ou quando há vínculos. Os IDs encontrados aparecem na advertência. A verificação é repetida antes de enviar DELETE.
+
+A API e o modo demo também rejeitam a exclusão com HTTP 409 `SESSION_IN_USE` enquanto houver qualquer processamento vinculado. Remova os processamentos por suas ações próprias antes de excluir a sessão; não há exclusão em cascata de processamentos e resultados a partir da sessão.

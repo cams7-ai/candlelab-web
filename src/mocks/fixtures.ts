@@ -1,3 +1,4 @@
+import { componentCatalog, recipeComponents } from "./componentCatalog";
 import { tutorialCatalog } from "./tutorialCatalog";
 import type {
   Candle,
@@ -57,7 +58,7 @@ const decimal = (title: string, defaultValue: string) => ({
   maximum: 100,
   default: defaultValue,
 });
-export const strategies: Strategy[] = [
+const strategyCatalog: Strategy[] = [
   {
     id: "SMA_CROSS@1",
     name: "SMA",
@@ -111,7 +112,12 @@ export const strategies: Strategy[] = [
     },
   },
   ...tutorialCatalog,
+  ...componentCatalog,
 ];
+export const strategies: Strategy[] = strategyCatalog.map((strategy) => ({
+  ...strategy,
+  components: recipeComponents[strategy.id] ?? [],
+}));
 export const summary: Summary = {
   initial_cash: "1000.00",
   final_cash: "1024.80",

@@ -1,7 +1,8 @@
+import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { allPages, api, request } from "../api";
 import { useQuery } from "../hooks";
-import type { Dataset, Instrument } from "../types";
+import type { Dataset, Instrument, Session } from "../types";
 import { binanceInput, datasetName, utc } from "../utils";
 import { DatasetCard, Empty, ErrorNotice, Loading } from "./common";
 import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
@@ -16,113 +17,280 @@ function LoadedDatasets({
 }) {
   const [deleteTarget, setDeleteTarget] = useState<Dataset>();
   const [deleting, setDeleting] = useState(false);
+  const [checkingBeforeDelete, setCheckingBeforeDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<unknown>();
+  const [validation, setValidation] = useState<{
+    id: string;
+    sessions?: Session[];
+    error?: unknown;
+  }>();
+  const [revision, setRevision] = useState(0);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+  const [interval, setInterval] = useState("");
   const activeDelete = useRef<AbortController>();
   useEffect(() => () => activeDelete.current?.abort(), []);
   const query = useQuery(
     (signal) => allPages<Dataset>("/datasets", signal, (d) => d.id),
     [],
   );
+  useEffect(() => {
+    if (!deleteTarget) return;
+    const controller = new AbortController();
+    setValidation(undefined);
+    api.datasetSessions(deleteTarget.id, controller.signal).then(
+      (sessions) => {
+        if (!controller.signal.aborted)
+          setValidation({ id: deleteTarget.id, sessions });
+      },
+      (error) => {
+        if (!controller.signal.aborted)
+          setValidation({ id: deleteTarget.id, error });
+      },
+    );
+    return () => controller.abort();
+  }, [deleteTarget?.id, revision]);
+  const linkedSessions =
+    validation?.id === deleteTarget?.id ? validation?.sessions : undefined;
+  const blocked = !linkedSessions || linkedSessions.length > 0;
+  const retryValidation = () => {
+    setDeleteError(undefined);
+    setValidation(undefined);
+    setRevision((value) => value + 1);
+  };
   const datasets = query.data?.filter((d) => !deletedIds.includes(d.id)) ?? [];
+  const normalize = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("pt-BR");
+  const term = normalize(search.trim());
+  const filtered = datasets.filter(
+    (dataset) =>
+      (!interval || dataset.interval === interval) &&
+      normalize(
+        `${datasetName(dataset)} ${dataset.id} ${dataset.symbol} ${dataset.base_asset}/${dataset.quote_asset} ${dataset.source}`,
+      ).includes(term),
+  );
   async function deleteDataset() {
-    if (!deleteTarget || deleting) return;
+    if (!deleteTarget || deleting || blocked) return;
     const controller = new AbortController();
     activeDelete.current = controller;
     setDeleting(true);
+    setCheckingBeforeDelete(true);
     setDeleteError(undefined);
+    let checking = true;
     try {
+      const sessions = await api.datasetSessions(
+        deleteTarget.id,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      setValidation({ id: deleteTarget.id, sessions });
+      if (sessions.length) return;
+      checking = false;
+      setCheckingBeforeDelete(false);
       await api.deleteDataset(deleteTarget.id, controller.signal);
       if (controller.signal.aborted) return;
       setDeletedIds((previous) => [...previous, deleteTarget.id]);
       onDelete(deleteTarget.id);
       setDeleteTarget(undefined);
     } catch (error) {
-      if (!controller.signal.aborted) setDeleteError(error);
+      if (!controller.signal.aborted) {
+        if (checking) setValidation({ id: deleteTarget.id, error });
+        else setDeleteError(error);
+      }
     } finally {
-      if (!controller.signal.aborted) setDeleting(false);
+      if (!controller.signal.aborted) {
+        setDeleting(false);
+        setCheckingBeforeDelete(false);
+      }
     }
   }
   return (
-    <section className="panel table-wrap">
+    <section
+      className="panel loaded-datasets-panel"
+      aria-label="Conjuntos de candles carregados"
+    >
       {deleteTarget && (
         <DeleteConfirmationDialog
           targetId={deleteTarget.id}
           targetName={datasetName(deleteTarget)}
           title="Excluir conjunto de candles?"
-          description="Este conjunto de candles, todas as sessões que o utilizam e todos os seus processamentos, resultados e relatórios serão removidos permanentemente. Esta ação não pode ser desfeita."
+          description="Este conjunto só pode ser excluído quando não houver sessões vinculadas. A exclusão dos candles não pode ser desfeita."
           confirmLabel="Excluir candles"
           busy={deleting}
+          busyLabel={checkingBeforeDelete ? "Verificando vínculos…" : undefined}
+          confirmDisabled={blocked}
+          validation={
+            !validation || validation.id !== deleteTarget.id ? (
+              <p role="status">
+                <Icon name="loading" spin />
+                Verificando sessões vinculadas…
+              </p>
+            ) : validation.error ? (
+              <div>
+                <p>
+                  A exclusão permanece desabilitada porque não foi possível
+                  consultar as sessões.
+                </p>
+                <ErrorNotice error={validation.error} retry={retryValidation} />
+              </div>
+            ) : linkedSessions?.length ? (
+              <div className="deletion-warning" role="alert">
+                <p>
+                  <Icon name="warning" />
+                  Este conjunto não pode ser excluído.
+                </p>
+                <p>
+                  Sessões vinculadas: {linkedSessions.length}.{" "}
+                  {linkedSessions
+                    .slice(0, 3)
+                    .map((session) => session.name)
+                    .join(", ")}
+                  {linkedSessions.length > 3
+                    ? ` e mais ${linkedSessions.length - 3}`
+                    : ""}
+                  .
+                </p>
+                <button type="button" onClick={retryValidation}>
+                  <Icon name="refresh" />
+                  Verificar vínculos novamente
+                </button>
+              </div>
+            ) : null
+          }
           error={deleteError}
           onCancel={() => setDeleteTarget(undefined)}
           onConfirm={() => void deleteDataset()}
         />
       )}
-      <h2>Candles carregados</h2>
       {query.loading ? (
         <Loading />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={query.retry} />
-      ) : !datasets.length ? (
-        <Empty>
-          Nenhum conjunto carregado. Busque candles na Binance ou envie um JSON.
-        </Empty>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th>Par / intervalo</th>
-              <th>Candles</th>
-              <th>Período (UTC)</th>
-              <th>Origem</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {datasets.map((d) => (
-              <tr key={d.id} className={selectedId === d.id ? "selected" : ""}>
-                <td>
-                  <button
-                    type="button"
-                    className="text-button dataset-name"
-                    aria-pressed={selectedId === d.id}
-                    onClick={() => onSelect(d)}
+        <>
+          <div className="catalog-toolbar">
+            <label>
+              Buscar conjuntos de candles
+              <span className="search-field">
+                <Icon name="search" standalone />
+                <input
+                  type="search"
+                  placeholder="Nome, par ou identificador"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </span>
+            </label>
+            <label>
+              <span>
+                <Icon name="filter" />
+                Intervalo dos candles
+              </span>
+              <select
+                value={interval}
+                onChange={(event) => setInterval(event.target.value)}
+              >
+                <option value="">Todos</option>
+                {[...new Set(datasets.map((dataset) => dataset.interval))]
+                  .sort()
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+          <p className="muted" role="status">
+            {filtered.length} de {datasets.length} conjuntos de candles
+          </p>
+          <div className="table-wrap">
+            <table className="loaded-datasets-table">
+              <caption className="sr-only">
+                Conjuntos de candles carregados
+              </caption>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Par / intervalo</th>
+                  <th>Candles</th>
+                  <th>Período (UTC)</th>
+                  <th>Origem</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((d) => (
+                  <tr
+                    key={d.id}
+                    className={selectedId === d.id ? "selected" : ""}
                   >
-                    {datasetName(d)}
-                  </button>
-                </td>
-                <td>
-                  {d.base_asset}/{d.quote_asset} · {d.interval}
-                </td>
-                <td>{d.candle_count}</td>
-                <td>
-                  {utc(d.first_open_time_ms)}
-                  <br />
-                  {utc(d.last_open_time_ms)}
-                </td>
-                <td>{d.source}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="negative"
-                    disabled={deleting}
-                    onClick={() => {
-                      setDeleteError(undefined);
-                      setDeleteTarget(d);
-                    }}
-                  >
-                    Excluir
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    <td>
+                      <button
+                        type="button"
+                        className="text-button dataset-name"
+                        aria-pressed={selectedId === d.id}
+                        onClick={() => onSelect(d)}
+                      >
+                        <Icon
+                          name={selectedId === d.id ? "check" : "database"}
+                        />
+                        {datasetName(d)}
+                      </button>
+                    </td>
+                    <td>
+                      {d.base_asset}/{d.quote_asset} · {d.interval}
+                    </td>
+                    <td>{d.candle_count}</td>
+                    <td>
+                      {utc(d.first_open_time_ms)}
+                      <br />
+                      {utc(d.last_open_time_ms)}
+                    </td>
+                    <td>{d.source}</td>
+                    <td>
+                      <div className="actions table-row-actions">
+                        <button
+                          type="button"
+                          className="table-row-action danger-outline"
+                          disabled={deleting}
+                          onClick={() => {
+                            setDeleteError(undefined);
+                            setValidation(undefined);
+                            setDeleteTarget(d);
+                          }}
+                        >
+                          <Icon name="delete" />
+                          Excluir
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!datasets.length ? (
+            <Empty>
+              Nenhum conjunto carregado. Busque candles na Binance ou envie um
+              JSON.
+            </Empty>
+          ) : (
+            !filtered.length && (
+              <Empty>
+                Nenhum conjunto encontrado para os filtros informados.
+              </Empty>
+            )
+          )}
+        </>
       )}
     </section>
   );
 }
+
 export function Acquisition({
   navigate,
 }: {
@@ -140,6 +308,19 @@ export function Acquisition({
   const [limit, setLimit] = useState("");
   const [file, setFile] = useState<File>();
   const [dataset, setDataset] = useState<Dataset>();
+  const datasetDetails = useRef<HTMLElement>(null);
+  function showDetails() {
+    datasetDetails.current?.scrollIntoView?.({
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+        ? "auto"
+        : "smooth",
+      block: "nearest",
+    });
+  }
+  useEffect(() => {
+    if (mode === "loaded" && dataset) showDetails();
+  }, [mode, dataset?.id]);
+
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
   const active = useRef<AbortController>();
@@ -206,6 +387,7 @@ export function Acquisition({
           aria-selected={mode === "loaded"}
           onClick={() => switchMode("loaded")}
         >
+          <Icon name="database" />
           Candles carregados
         </button>
         <button
@@ -213,6 +395,7 @@ export function Acquisition({
           aria-selected={mode === "binance"}
           onClick={() => switchMode("binance")}
         >
+          <Icon name="download" />
           Buscar na Binance
         </button>
         <button
@@ -220,14 +403,20 @@ export function Acquisition({
           aria-selected={mode === "json"}
           onClick={() => switchMode("json")}
         >
+          <Icon name="upload" />
           Enviar JSON
         </button>
       </div>
-      <div className="two-columns">
+      <div
+        className={mode === "loaded" ? "loaded-datasets-layout" : "two-columns"}
+      >
         {mode === "loaded" ? (
           <LoadedDatasets
             selectedId={dataset?.id}
-            onSelect={setDataset}
+            onSelect={(next) => {
+              setDataset(next);
+              if (next.id === dataset?.id) showDetails();
+            }}
             onDelete={(id) =>
               setDataset((current) =>
                 current?.id === id ? undefined : current,
@@ -306,7 +495,8 @@ export function Acquisition({
               </>
             ) : (
               <label className="upload">
-                Arquivo JSON *<span className="upload-icon">{"{ }"}</span>
+                Arquivo JSON *
+                <Icon name="json" standalone className="upload-icon" />
                 <input
                   type="file"
                   accept=".json,application/json"
@@ -321,6 +511,12 @@ export function Acquisition({
             )}
             {error != null && <ErrorNotice error={error} />}
             <button className="primary" disabled={busy || !instrument}>
+              <Icon
+                name={
+                  busy ? "loading" : mode === "binance" ? "download" : "import"
+                }
+                spin={busy}
+              />
               {busy
                 ? "Aguarde…"
                 : mode === "binance"
@@ -329,10 +525,11 @@ export function Acquisition({
             </button>
           </form>
         )}
-        <DatasetCard dataset={dataset}>
+        <DatasetCard dataset={dataset} elementRef={datasetDetails}>
           {dataset && (
             <>
               <p role="status" className="accent">
+                <Icon name="check" />
                 {mode === "json"
                   ? "Importação concluída"
                   : mode === "loaded"
@@ -347,6 +544,7 @@ export function Acquisition({
                   )
                 }
               >
+                <Icon name="add" />
                 Criar sessão
               </button>
             </>

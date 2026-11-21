@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { useEffect, useRef } from "react";
 import {
   CandlestickSeries,
@@ -14,6 +15,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { Candle, Equity, Indicator, Run, TradeEvent } from "../types";
+import { indicatorContext } from "../combinations";
 export const chartTime = (ms: number) => Math.floor(ms / 1000) as UTCTimestamp;
 export function markersFor(
   events: TradeEvent[],
@@ -120,16 +122,17 @@ export function Chart({
     let pane = 1;
     const groups = new Map<string, number>();
     keys.forEach((key, index) => {
+      const { prefix, indicatorKey, parameters } = indicatorContext(run, key);
       const separate =
         /^(rsi|roc|adx|atr|macd|macd_signal|spread_bps|edge_bps|flow|zscore|probability|rank|btc_position|eth_short_position|eth_price)$/.test(
-          key,
+          indicatorKey,
         ) || /volume/i.test(key);
       let paneIndex = 0;
       if (separate) {
-        const group = key.startsWith("macd")
-          ? "macd"
-          : key.endsWith("position")
-            ? "positions"
+        const group = indicatorKey.startsWith("macd")
+          ? prefix + "macd"
+          : indicatorKey.endsWith("position")
+            ? prefix + "positions"
             : key;
         if (!groups.has(group)) groups.set(group, pane++);
         paneIndex = groups.get(group)!;
@@ -140,7 +143,7 @@ export function Chart({
         title: key,
         priceLineVisible: false,
         lastValueVisible: true,
-        ...(key === "rsi"
+        ...(indicatorKey === "rsi"
           ? {
               autoscaleInfoProvider: () => ({
                 priceRange: { minValue: 0, maxValue: 100 },
@@ -164,11 +167,11 @@ export function Chart({
       } else {
         const series = chart.addSeries(LineSeries, options, paneIndex);
         series.setData(data);
-        if (key === "rsi")
+        if (indicatorKey === "rsi")
           chart
             .priceScale("right", paneIndex)
             .applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
-        if (key === "rsi" && run) {
+        if (indicatorKey === "rsi" && run) {
           [
             "oversold",
             "overbought",
@@ -177,9 +180,9 @@ export function Chart({
             "rsi_min",
             "rsi_max",
           ].forEach((k) => {
-            if (run.parameters[k] != null)
+            if (parameters[k] != null)
               series.createPriceLine({
-                price: Number(run.parameters[k]),
+                price: Number(parameters[k]),
                 color: "#a1e766",
                 lineWidth: 1,
                 lineStyle: LineStyle.Dashed,
@@ -227,16 +230,19 @@ export function Chart({
         aria-label="Visualização do gráfico"
       >
         <button type="button" onClick={() => zoom(0.8)}>
+          <Icon name="zoomIn" />
           Zoom +
         </button>
         <button type="button" onClick={() => zoom(1.25)}>
+          <Icon name="zoomOut" />
           Zoom -
         </button>
         <button
           type="button"
           onClick={() => chartRef.current?.timeScale().fitContent()}
         >
-          <span aria-hidden="true">↔</span> Ver tudo
+          <Icon name="fit" />
+          Ver tudo
         </button>
       </div>
       <div
@@ -248,7 +254,7 @@ export function Chart({
       <div className="chart-credit">
         Gráficos por{" "}
         <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
-          TradingView Lightweight Charts™
+          TradingView Lightweight Charts™ <Icon name="external" standalone />
         </a>{" "}
         · Horários em UTC · Setas = sinais · Círculos = execuções
       </div>

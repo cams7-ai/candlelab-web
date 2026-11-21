@@ -9,8 +9,15 @@ import {
   makeSeries,
 } from "./fixtures";
 import type { BinanceInput, Candle, Dataset, Run, Session } from "../types";
-import { candleDatasetName } from "../utils";
+import { memberKey } from "../combinations";
+import {
+  candleDatasetName,
+  parameterValue,
+  strategyParameters,
+} from "../utils";
+import type { CombinationDefinition, StrategyCombination } from "../types";
 interface Store {
+  combinations: StrategyCombination[];
   datasets: Dataset[];
   sessions: Session[];
   runs: Run[];
@@ -19,6 +26,7 @@ interface Store {
 const storageKey = "candlelab-demo-v1";
 function seed(): Store {
   return structuredClone({
+    combinations: [],
     datasets: [dataset],
     sessions: [session],
     runs,
@@ -31,7 +39,7 @@ function restore(): Store {
       typeof localStorage !== "undefined"
         ? localStorage.getItem(storageKey)
         : null;
-    return raw ? JSON.parse(raw) : seed();
+    return raw ? { ...seed(), ...JSON.parse(raw) } : seed();
   } catch {
     return seed();
   }
@@ -47,6 +55,126 @@ function save() {
   if (typeof localStorage !== "undefined")
     localStorage.setItem(storageKey, JSON.stringify(store));
 }
+
+function normalizeCombination(
+  body: CombinationDefinition,
+  depth = 1,
+  counter = { leaves: 0 },
+): CombinationDefinition {
+  if (depth > 4)
+    throw new Error("Combinações aceitam até 4 níveis de agrupamento.");
+  if (
+    typeof body.name !== "string" ||
+    !body.name.trim() ||
+    body.name.trim().length > 200
+  )
+    throw new Error("Informe um nome de até 200 caracteres.");
+  if (!["preset", "custom", "strategy"].includes(body.kind))
+    throw new Error("Tipo de combinação inválido.");
+  const normalize = (id: string, values: Record<string, string | number>) => {
+    const strategy = strategies.find((s) => s.id === id);
+    if (!strategy) throw new Error("Estratégia inexistente.");
+    const parsed = strategyParameters(strategy, values);
+    return parsed;
+  };
+  const definition: CombinationDefinition = {
+    name: body.name.trim(),
+    kind: body.kind,
+    strategy_id: body.strategy_id ?? null,
+    parameters: body.parameters ?? {},
+    members: body.members ?? [],
+    buy_rule: body.buy_rule ?? "all",
+    sell_rule: body.sell_rule ?? "any",
+  };
+  if (
+    !["all", "any"].includes(definition.buy_rule) ||
+    !["all", "any"].includes(definition.sell_rule)
+  )
+    throw new Error("Regra inválida.");
+  if (definition.kind !== "custom") {
+    if (
+      definition.members.length ||
+      definition.buy_rule !== "all" ||
+      definition.sell_rule !== "any" ||
+      !strategies.some(
+        (s) =>
+          s.id === definition.strategy_id &&
+          (definition.kind === "preset"
+            ? s.category === "combination"
+            : s.category !== "combination"),
+      )
+    )
+      throw new Error("Selecione uma combinação publicada.");
+    const strategy = strategies.find((s) => s.id === definition.strategy_id)!;
+    if (
+      depth > 1 &&
+      (["DCA@1", "GRID_TRADING@1", "GRID_ADX_ATR@1"].includes(strategy.id) ||
+        strategy.required_data?.length)
+    )
+      throw new Error(
+        "Combinação publicada incompatível com composição Spot OHLCV.",
+      );
+    definition.parameters = normalize(
+      definition.strategy_id!,
+      definition.parameters,
+    );
+    counter.leaves += 1;
+  } else {
+    if (
+      definition.strategy_id ||
+      Object.keys(definition.parameters).length ||
+      definition.members.length < 2 ||
+      definition.members.length > 8 ||
+      new Set(definition.members.map(memberKey)).size !==
+        definition.members.length
+    )
+      throw new Error("Selecione de 2 a 8 estratégias distintas.");
+    definition.members = definition.members.map((member) => {
+      if (member.combination) {
+        if (member.strategy_id || Object.keys(member.parameters ?? {}).length)
+          throw new Error("Um grupo recebe somente o snapshot da combinação.");
+        return {
+          strategy_id: "",
+          parameters: {},
+          combination: normalizeCombination(
+            member.combination,
+            depth + 1,
+            counter,
+          ),
+        };
+      }
+      counter.leaves += 1;
+      const strategy = strategies.find((s) => s.id === member.strategy_id);
+      if (
+        !strategy ||
+        ["DCA@1", "GRID_TRADING@1", "GRID_ADX_ATR@1"].includes(strategy.id) ||
+        strategy.required_data?.length
+      )
+        throw new Error("Estratégia incompatível com composição Spot OHLCV.");
+      return {
+        ...member,
+        parameters: normalize(member.strategy_id, member.parameters),
+      };
+    });
+  }
+  if (counter.leaves > 64)
+    throw new Error("Combinações aceitam até 64 estratégias no total.");
+  if (
+    definition.kind === "custom" &&
+    !definition.members.some(
+      (m) =>
+        m.combination?.kind === "custom" ||
+        (strategies.find(
+          (s) => s.id === (m.combination?.strategy_id ?? m.strategy_id),
+        )?.composition_role ?? "signal") === "signal",
+    )
+  )
+    throw new Error(
+      "Inclua pelo menos uma estratégia de sinal, além de filtros e saídas.",
+    );
+  return definition;
+}
+
 const base = "*/api/v1";
 const error = (status: number, message: string, details: unknown = null) =>
   HttpResponse.json(
@@ -125,7 +253,15 @@ export const handlers = [
     }),
   ),
   http.get(base + "/strategies", () =>
-    HttpResponse.json({ items: strategies }),
+    HttpResponse.json({
+      items: strategies.map((strategy) => ({
+        ...strategy,
+        combinable:
+          !["DCA@1", "GRID_TRADING@1", "GRID_ADX_ATR@1"].includes(
+            strategy.id,
+          ) && !strategy.required_data?.length,
+      })),
+    }),
   ),
   http.get(base + "/datasets", ({ request }) => page(store.datasets, request)),
   http.post(base + "/datasets/binance", async ({ request }) => {
@@ -231,13 +367,26 @@ export const handlers = [
   http.delete(base + "/datasets/:id", ({ params }) => {
     if (!store.datasets.some((d) => d.id === params.id))
       return error(404, "Conjunto não encontrado.");
-    const sessionIds = new Set(
-      store.sessions.filter((s) => s.dataset_id === params.id).map((s) => s.id),
+    const sessions = store.sessions.filter(
+      (session) => session.dataset_id === params.id,
     );
-    for (const run of store.runs.filter((r) => sessionIds.has(r.session_id)))
-      delete polls[run.id];
-    store.runs = store.runs.filter((r) => !sessionIds.has(r.session_id));
-    store.sessions = store.sessions.filter((s) => !sessionIds.has(s.id));
+    if (sessions.length)
+      return HttpResponse.json(
+        {
+          error: {
+            code: "DATASET_IN_USE",
+            message:
+              "Este conjunto de candles não pode ser excluído: existem sessões vinculadas.",
+            details: [
+              {
+                field: "dataset_id",
+                sessions: sessions.map(({ id, name }) => ({ id, name })),
+              },
+            ],
+          },
+        },
+        { status: 409 },
+      );
     store.datasets = store.datasets.filter((d) => d.id !== params.id);
     delete store.candles[String(params.id)];
     save();
@@ -248,6 +397,65 @@ export const handlers = [
     return data
       ? page(filterTime(data, request), request)
       : error(404, "Conjunto não encontrado.");
+  }),
+  http.get(base + "/strategy-combinations", ({ request }) =>
+    page(store.combinations, request),
+  ),
+  http.post(base + "/strategy-combinations", async ({ request }) => {
+    try {
+      const definition = normalizeCombination(
+        (await request.json()) as CombinationDefinition,
+      );
+      if (
+        store.combinations.some(
+          (c) =>
+            c.name.toLocaleLowerCase() === definition.name.toLocaleLowerCase(),
+        )
+      )
+        return error(409, "Já existe uma combinação com esse nome.");
+      const saved = { ...definition, id: crypto.randomUUID() };
+      store.combinations.push(saved);
+      save();
+      return HttpResponse.json(saved, { status: 201 });
+    } catch (err) {
+      return error(
+        422,
+        err instanceof Error ? err.message : "Combinação inválida.",
+      );
+    }
+  }),
+  http.put(base + "/strategy-combinations/:id", async ({ request, params }) => {
+    const index = store.combinations.findIndex((c) => c.id === params.id);
+    if (index < 0) return error(404, "Combinação não encontrada.");
+    try {
+      const definition = normalizeCombination(
+        (await request.json()) as CombinationDefinition,
+      );
+      if (
+        store.combinations.some(
+          (c) =>
+            c.id !== params.id &&
+            c.name.toLocaleLowerCase() === definition.name.toLocaleLowerCase(),
+        )
+      )
+        return error(409, "Já existe uma combinação com esse nome.");
+      const saved = { ...definition, id: String(params.id) };
+      store.combinations[index] = saved;
+      save();
+      return HttpResponse.json(saved);
+    } catch (err) {
+      return error(
+        422,
+        err instanceof Error ? err.message : "Combinação inválida.",
+      );
+    }
+  }),
+  http.delete(base + "/strategy-combinations/:id", ({ params }) => {
+    if (!store.combinations.some((c) => c.id === params.id))
+      return error(404, "Combinação não encontrada.");
+    store.combinations = store.combinations.filter((c) => c.id !== params.id);
+    save();
+    return new HttpResponse(null, { status: 204 });
   }),
   http.get(base + "/sessions", ({ request }) => page(store.sessions, request)),
   http.post(base + "/sessions", async ({ request }) => {
@@ -266,9 +474,24 @@ export const handlers = [
   http.delete(base + "/sessions/:id", ({ params }) => {
     if (!store.sessions.some((s) => s.id === params.id))
       return error(404, "Sessão não encontrada.");
-    for (const run of store.runs.filter((r) => r.session_id === params.id))
-      delete polls[run.id];
-    store.runs = store.runs.filter((r) => r.session_id !== params.id);
+    const runs = store.runs.filter((run) => run.session_id === params.id);
+    if (runs.length)
+      return HttpResponse.json(
+        {
+          error: {
+            code: "SESSION_IN_USE",
+            message:
+              "Esta sessão não pode ser excluída: existem processamentos vinculados.",
+            details: [
+              {
+                field: "session_id",
+                runs: runs.map(({ id, status }) => ({ id, status })),
+              },
+            ],
+          },
+        },
+        { status: 409 },
+      );
     store.sessions = store.sessions.filter((s) => s.id !== params.id);
     save();
     return new HttpResponse(null, { status: 204 });
@@ -282,14 +505,56 @@ export const handlers = [
   http.post(base + "/sessions/:id/runs", async ({ params, request }) => {
     if (!store.sessions.some((s) => s.id === params.id))
       return error(404, "Sessão não encontrada.");
-    const body = (await request.json()) as Pick<
-      Run,
-      "strategy_id" | "parameters" | "auxiliary_filename"
-    >;
-    if (!strategies.some((s) => s.id === body.strategy_id))
+    const incoming = (await request.json()) as Partial<Run> & {
+      combination_id?: string;
+    };
+    let combination: StrategyCombination | undefined;
+    if (incoming.combination_id) {
+      if (
+        incoming.strategy_id ||
+        Object.keys(incoming.parameters ?? {}).length ||
+        incoming.auxiliary_filename
+      )
+        return error(
+          422,
+          "Selecione estratégia ou combinação, exclusivamente.",
+        );
+      combination = store.combinations.find(
+        (c) => c.id === incoming.combination_id,
+      );
+      if (!combination) return error(404, "Combinação não encontrada.");
+    }
+    const body = combination
+      ? {
+          strategy_id:
+            combination.kind === "custom"
+              ? "CUSTOM_COMBINATION@1"
+              : combination.strategy_id!,
+          parameters:
+            combination.kind === "custom"
+              ? {
+                  definition_json: JSON.stringify(
+                    Object.fromEntries(
+                      Object.entries(combination).filter(
+                        ([key]) => key !== "id",
+                      ),
+                    ),
+                  ),
+                }
+              : structuredClone(combination.parameters),
+          combination_snapshot: structuredClone(combination),
+        }
+      : (incoming as Pick<
+          Run,
+          "strategy_id" | "parameters" | "auxiliary_filename"
+        >);
+    if (
+      body.strategy_id !== "CUSTOM_COMBINATION@1" &&
+      !strategies.some((s) => s.id === body.strategy_id)
+    )
       return error(422, "Estratégia inexistente.", { field: "strategy_id" });
     const strategy = strategies.find((s) => s.id === body.strategy_id)!;
-    if (strategy.required_data?.length) {
+    if (strategy?.required_data?.length) {
       try {
         const rows = JSON.parse(String(body.parameters.auxiliary_json));
         const sess = store.sessions.find((s) => s.id === params.id)!;

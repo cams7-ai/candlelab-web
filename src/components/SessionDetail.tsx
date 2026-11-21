@@ -1,3 +1,9 @@
+import { Icon } from "./Icon";
+import {
+  runParameterLabel,
+  runParameters,
+  runStrategyName,
+} from "../combinations";
 import { useEffect, useRef, useState } from "react";
 import { allPages, api, request, resource } from "../api";
 import { useQuery } from "../hooks";
@@ -12,7 +18,7 @@ import type {
   Summary,
   TradeEvent,
 } from "../types";
-import { format, labels, utc } from "../utils";
+import { format, utc } from "../utils";
 import { Chart } from "./Chart";
 import { summaryLabels, summaryOrder } from "../financialSummary";
 import { Empty, ErrorNotice, Loading } from "./common";
@@ -163,10 +169,8 @@ export function SessionDetail({
           run: result,
           events,
           equity,
-          strategyName:
-            query.data.strategies.find(
-              (strategy) => strategy.id === result.strategy_id,
-            )?.name ?? result.strategy_id,
+          strategyName: runStrategyName(result, query.data.strategies),
+          strategies: query.data.strategies,
         });
     } catch (error) {
       if (!controller.signal.aborted) setExportError(error);
@@ -210,7 +214,7 @@ export function SessionDetail({
     [run?.id, run?.status],
   );
   const name = (r: Run) =>
-    `${query.data?.strategies.find((s) => s.id === r.strategy_id)?.name ?? r.strategy_id} · ${r.strategy_id}`;
+    `${runStrategyName(r, query.data?.strategies)} · ${r.strategy_id}`;
   function select(next: string) {
     if (selector.current) selector.current.open = false;
     setSearch("");
@@ -222,7 +226,7 @@ export function SessionDetail({
   if (query.error)
     return <ErrorNotice error={query.error} retry={query.retry} />;
   if (!query.data) return null;
-  const { session, dataset } = query.data;
+  const { session, dataset, strategies } = query.data;
   const runsById = new Map(query.data.runs.map((r) => [r.id, r]));
   Object.values(updatedRuns).forEach((r) => {
     if (r.session_id === id) runsById.set(r.id, r);
@@ -271,6 +275,7 @@ export function SessionDetail({
       <header>
         <div>
           <a className="breadcrumb" href="#/sessions">
+            <Icon name="back" />
             Sessões › Detalhe da sessão
           </a>
           <h1>{session.name}</h1>
@@ -287,7 +292,8 @@ export function SessionDetail({
             navigate(`/sessions/${encodeURIComponent(id)}/runs/new`)
           }
         >
-          ▶ Novo processamento
+          <Icon name="run" />
+          Novo processamento
         </button>
       </header>
       <div className="detail-grid">
@@ -296,6 +302,7 @@ export function SessionDetail({
             <strong>Processamento</strong>
             <details className="run-selector" ref={selector}>
               <summary>
+                <Icon name="history" />
                 {run
                   ? name(run)
                   : selectedId
@@ -303,12 +310,15 @@ export function SessionDetail({
                     : "Selecionar processamento"}
               </summary>
               <div className="selector-menu">
-                <input
-                  aria-label="Buscar estratégia"
-                  placeholder="⌕ Buscar estratégia"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+                <span className="search-field">
+                  <Icon name="search" standalone />
+                  <input
+                    aria-label="Buscar estratégia"
+                    placeholder="Buscar estratégia"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </span>
                 {runs
                   .filter((r) =>
                     name(r).toLowerCase().includes(search.toLowerCase()),
@@ -320,7 +330,7 @@ export function SessionDetail({
                       key={r.id}
                       onClick={() => select(r.id)}
                     >
-                      {r.id === selectedId ? "✓ " : ""}
+                      {r.id === selectedId && <Icon name="check" />}
                       {name(r)}
                       <small>
                         {r.id} · {statusLabels[r.status]}
@@ -336,7 +346,8 @@ export function SessionDetail({
               aria-pressed={showParameters}
               onClick={() => setShowParameters(!showParameters)}
             >
-              ⚙ Parâmetros
+              <Icon name="parameters" />
+              Parâmetros
             </button>
             <label className="toggle">
               <input
@@ -344,7 +355,10 @@ export function SessionDetail({
                 checked={signals}
                 onChange={(e) => setSignals(e.target.checked)}
               />
-              Sinais
+              <span>
+                <Icon name="signal" />
+                Sinais
+              </span>
             </label>
             <label className="toggle">
               <input
@@ -352,7 +366,10 @@ export function SessionDetail({
                 checked={fills}
                 onChange={(e) => setFills(e.target.checked)}
               />
-              Execuções
+              <span>
+                <Icon name="check" />
+                Execuções
+              </span>
             </label>
           </div>
           {pollError != null ? (
@@ -366,6 +383,18 @@ export function SessionDetail({
           {run && (
             <p className="run-status" role="status">
               <span className={"status " + run.status}>
+                <Icon
+                  name={
+                    run.status === "queued"
+                      ? "pending"
+                      : run.status === "running"
+                        ? "loading"
+                        : run.status === "completed"
+                          ? "success"
+                          : "failure"
+                  }
+                  spin={run.status === "running"}
+                />
                 {statusLabels[run.status]}
               </span>{" "}
               {run.id}
@@ -415,7 +444,10 @@ export function SessionDetail({
         </section>
         <aside className="results-column">
           <section className="panel">
-            <h2>Resumo financeiro</h2>
+            <h2>
+              <Icon name="money" />
+              Resumo financeiro
+            </h2>
             {run?.summary ? (
               <FinancialSummary summary={run.summary} />
             ) : (
@@ -426,7 +458,10 @@ export function SessionDetail({
           </section>
           {showParameters && (
             <section className="panel">
-              <h2>Parâmetros efetivos</h2>
+              <h2>
+                <Icon name="parameters" />
+                Parâmetros efetivos
+              </h2>
               {run ? (
                 <>
                   <p className="muted">{name(run)}</p>
@@ -439,9 +474,9 @@ export function SessionDetail({
                         </dd>
                       </div>
                     )}
-                    {Object.entries(run.parameters).map(([k, v]) => (
+                    {runParameters(run).map(([k, v]) => (
                       <div className="metric" key={k}>
-                        <dt>{labels[k] ?? k}</dt>
+                        <dt>{runParameterLabel(run, k, strategies)}</dt>
                         <dd>
                           {k === "auxiliary_json"
                             ? `${JSON.parse(String(v)).length} observações importadas`
@@ -467,7 +502,10 @@ export function SessionDetail({
         </p>
       )}
       <section className="panel">
-        <h2>Comparar processamentos</h2>
+        <h2>
+          <Icon name="compare" />
+          Comparar processamentos
+        </h2>
         {exportError != null && <ErrorNotice error={exportError} />}
         <div className="table-wrap">
           <table>
@@ -496,21 +534,28 @@ export function SessionDetail({
                         className="text-button"
                         onClick={() => select(r.id)}
                       >
+                        <Icon name={r.id === selectedId ? "check" : "run"} />
                         {name(r)}
                         <small>{r.id}</small>
                       </button>
                     </td>
                     <td className="parameters-cell">
-                      {Object.entries(r.parameters)
+                      {runParameters(r)
                         .map(
                           ([k, v]) =>
-                            `${labels[k] ?? k}: ${k === "auxiliary_json" ? "snapshot JSON importado" : format(v)}`,
+                            `${runParameterLabel(r, k, strategies)}: ${k === "auxiliary_json" ? "snapshot JSON importado" : format(v)}`,
                         )
                         .join(" · ")}
                     </td>
-                    <td>{format(r.summary!.final_equity)} USDT</td>
-                    <td>{format(r.summary!.return_pct)}%</td>
-                    <td>{format(r.summary!.total_fees)} USDT</td>
+                    <td title={`${format(r.summary!.final_equity)} USDT`}>
+                      {format(Number(r.summary!.final_equity).toFixed(2))} USDT
+                    </td>
+                    <td title={`${format(r.summary!.return_pct)}%`}>
+                      {format(Number(r.summary!.return_pct).toFixed(2))}%
+                    </td>
+                    <td title={`${format(r.summary!.total_fees)} USDT`}>
+                      {format(Number(r.summary!.total_fees).toFixed(2))} USDT
+                    </td>
                     <td title={`${format(r.summary!.max_drawdown_pct)}%`}>
                       {format(Number(r.summary!.max_drawdown_pct).toFixed(2))}%
                     </td>
@@ -520,6 +565,10 @@ export function SessionDetail({
                         disabled={exportingId != null || deletingId != null}
                         onClick={() => void exportPdf(r)}
                       >
+                        <Icon
+                          name={exportingId === r.id ? "loading" : "pdf"}
+                          spin={exportingId === r.id}
+                        />
                         {exportingId === r.id ? "Gerando PDF…" : "Exportar PDF"}
                       </button>
                     </td>
@@ -533,6 +582,10 @@ export function SessionDetail({
                           setDeleteTarget(r);
                         }}
                       >
+                        <Icon
+                          name={deletingId === r.id ? "loading" : "delete"}
+                          spin={deletingId === r.id}
+                        />
                         {deletingId === r.id ? "Excluindo…" : "Excluir"}
                       </button>
                     </td>
@@ -546,7 +599,10 @@ export function SessionDetail({
         )}
       </section>
       <section className="panel">
-        <h2>Histórico de sinais e execuções</h2>
+        <h2>
+          <Icon name="history" />
+          Histórico de sinais e execuções
+        </h2>
         <p className="muted">
           A âncora identifica o candle. A disponibilidade do sinal e o
           preenchimento seguem seus próprios horários.

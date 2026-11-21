@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 export function useQuery<T>(
   load: (signal: AbortSignal) => Promise<T>,
   deps: unknown[],
@@ -21,4 +21,12 @@ export function useQuery<T>(
     return () => controller.abort();
   }, [...deps, revision]); // dependencies are explicit at each call site
   return { ...state, retry };
+}
+
+export function useRefreshOnActivate(active: boolean, refresh: () => void) {
+  const previous = useRef(active);
+  useEffect(() => {
+    if (active && !previous.current) refresh();
+    previous.current = active;
+  }, [active, refresh]);
 }

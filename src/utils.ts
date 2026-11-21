@@ -1,4 +1,4 @@
-import type { BinanceInput, Dataset, ParameterSchema } from "./types";
+import type { BinanceInput, Dataset, ParameterSchema, Strategy } from "./types";
 export function candleDatasetName(
   symbol: string,
   interval: string,
@@ -85,6 +85,8 @@ export function binanceInput(
   return input;
 }
 export function parameterValue(value: string, schema: ParameterSchema) {
+  if (schema.maxLength != null && value.length > schema.maxLength)
+    throw new Error("Parâmetro excede o tamanho máximo do catálogo.");
   if (schema.contentMediaType === "application/json") {
     let parsed: unknown;
     try {
@@ -116,6 +118,17 @@ export function parameterValue(value: string, schema: ParameterSchema) {
     (schema["x-max"] != null && number > Number(schema["x-max"]))
   )
     throw new Error("Parâmetro fora dos limites do catálogo.");
+  if (
+    (schema["x-decimal-minimum"] != null &&
+      number < Number(schema["x-decimal-minimum"])) ||
+    (schema["x-decimal-maximum"] != null &&
+      number > Number(schema["x-decimal-maximum"])) ||
+    (schema["x-decimal-exclusiveMinimum"] != null &&
+      number <= Number(schema["x-decimal-exclusiveMinimum"])) ||
+    (schema["x-decimal-exclusiveMaximum"] != null &&
+      number >= Number(schema["x-decimal-exclusiveMaximum"]))
+  )
+    throw new Error("Parâmetro fora dos limites do catálogo.");
   if (schema.pattern && !new RegExp(schema.pattern).test(normalized))
     throw new Error("Formato de parâmetro inválido.");
   return schema.type === "string" ? normalized : number;
@@ -129,3 +142,71 @@ export const labels: Record<string, string> = {
   overbought: "Sobrecompra",
   rsi_confirmation_min: "Confirmação mínima do RSI",
 };
+
+// Localize the generated catalog titles once for forms, summaries and reports.
+// Specific titles supplied in Portuguese retain the catalog's wording.
+const parameterTitleTranslations: Record<string, string> = {
+  "short window": "Janela curta",
+  "long window": "Janela longa",
+  "roc period": "Período do ROC",
+  "ema period": "Período da EMA",
+  "volume period": "Período do volume",
+  "adx period": "Período do ADX",
+  "atr period": "Período do ATR",
+  "rsi period": "Período do RSI",
+  period: "Período",
+  lookback: "Janela de análise",
+  levels: "Número de níveis",
+  "trailing atr": "Multiplicador do stop móvel por ATR",
+  "max hold": "Duração máxima (candles)",
+  "every candles": "Intervalo entre aportes (candles)",
+  "start index": "Índice inicial",
+  "top n": "Quantidade de ativos selecionados",
+};
+
+export function parameterLabel(key: string, strategy?: Strategy): string {
+  const title = strategy?.parameters_schema.properties[key]?.title;
+  if (title != null)
+    return parameterTitleTranslations[title.trim().toLowerCase()] ?? title;
+  return labels[key] ?? key;
+}
+
+export function strategyParameters(
+  strategy: Strategy,
+  values: Record<string, string | number>,
+) {
+  const parameters = Object.fromEntries(
+    Object.entries(strategy.parameters_schema.properties).map(
+      ([key, schema]) => [
+        key,
+        parameterValue(
+          String(values[key] ?? strategy.defaults[key] ?? schema.default ?? ""),
+          schema,
+        ),
+      ],
+    ),
+  );
+  for (const [lower, upper, message] of [
+    [
+      "short_window",
+      "long_window",
+      "Exija janela curta menor que janela longa.",
+    ],
+    ["oversold", "overbought", "Exija sobrevenda menor que sobrecompra."],
+    ["rsi_min", "rsi_max", "Exija RSI mínimo menor que RSI máximo."],
+    [
+      "sell_probability",
+      "buy_probability",
+      "Exija probabilidade de saída menor que a de entrada.",
+    ],
+    ["entry_z", "stop_z", "Exija Z-score de entrada menor que o de stop."],
+  ]) {
+    if (
+      parameters[lower] != null &&
+      parameters[upper] != null &&
+      Number(parameters[lower]) >= Number(parameters[upper])
+    )
+      throw new Error(message);
+  }
+  return parameters;
+}

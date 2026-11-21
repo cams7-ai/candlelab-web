@@ -1,3 +1,4 @@
+import { selectRunStrategy } from "./helpers/selectRunStrategy";
 import {
   render,
   screen,
@@ -262,11 +263,7 @@ it("carrega estratégias novas e parâmetros a partir do catálogo HTTP", async 
   );
   const navigate = vi.fn();
   render(<NewRun id={session.id} navigate={navigate} />);
-  await screen.findByLabelText("Estratégia");
-  await userEvent.selectOptions(
-    screen.getByLabelText("Estratégia"),
-    "FUTURE@2",
-  );
+  await selectRunStrategy("FUTURE@2");
   expect(screen.getByLabelText(/Janela futura/)).toHaveValue("15");
   await userEvent.clear(screen.getByLabelText(/Limiar futuro/));
   await userEvent.type(
@@ -391,6 +388,9 @@ it("exporta o processamento da linha sem alterar a seleção e carrega todas as 
   expect(downloadRunPdf).toHaveBeenCalledWith(
     expect.objectContaining({
       run: runs[1],
+      strategies: expect.arrayContaining([
+        expect.objectContaining({ id: runs[1].strategy_id }),
+      ]),
       candles,
       events: data.events,
       equity: data.equity,
@@ -650,54 +650,58 @@ it("preserva a linha ao cancelar ou falhar a exclusão e permite tentar novament
   await waitFor(() => expect(calls).toBe(2));
 });
 
-it("exclui a sessão e seus processamentos e preserva outras sessões e candles", async () => {
+it("bloqueia a exclusão de sessão com processamentos e preserva os dados", async () => {
+  const remove = vi.fn(() => new HttpResponse(null, { status: 204 }));
+  server.use(http.delete(apiBase + `/sessions/${session.id}`, remove));
+  location.hash = "/sessions";
+  render(<App />);
+  const link = await screen.findByRole("link", { name: session.name });
+  await userEvent.click(
+    within(link.closest("tr")!).getByRole("button", { name: "Excluir" }),
+  );
+  const modal = within(
+    screen.getByRole("alertdialog", { name: "Excluir sessão?" }),
+  );
+  expect(await modal.findByRole("alert")).toHaveTextContent(
+    "Processamentos vinculados: 2",
+  );
+  expect(modal.getByRole("button", { name: "Excluir sessão" })).toBeDisabled();
+  expect(remove).not.toHaveBeenCalled();
+  await userEvent.click(modal.getByRole("button", { name: "Cancelar" }));
+  expect(link).toBeInTheDocument();
+  for (const run of runs)
+    expect(await request(`/runs/${run.id}`)).toMatchObject({ id: run.id });
+});
+
+it("exclui uma sessão sem processamentos e preserva as demais sessões e os candles", async () => {
   const other = await request<{ id: string }>("/sessions", {
     method: "POST",
     body: JSON.stringify({ ...session, id: undefined, name: "Outra sessão" }),
   });
   location.hash = "/sessions";
-  const view = render(<App />);
-  const link = await screen.findByRole("link", { name: session.name });
-  const row = link.closest("tr")!;
-  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
-  const modal = screen.getByRole("alertdialog", { name: "Excluir sessão?" });
-  expect(modal).toHaveTextContent(session.name);
-  expect(modal).toHaveTextContent("todos os seus processamentos");
+  render(<App />);
+  const link = await screen.findByRole("link", { name: "Outra sessão" });
   await userEvent.click(
-    within(modal).getByRole("button", { name: "Cancelar" }),
+    within(link.closest("tr")!).getByRole("button", { name: "Excluir" }),
   );
-  expect(link).toBeInTheDocument();
-  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
-  await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
+  const confirm = screen.getByRole("button", { name: "Excluir sessão" });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  await userEvent.click(confirm);
   await waitFor(() => expect(link).not.toBeInTheDocument());
-  for (const run of runs) {
-    await expect(request(`/runs/${run.id}`)).rejects.toMatchObject({
-      status: 404,
-    });
-  }
-  await expect(request(`/sessions/${session.id}`)).rejects.toMatchObject({
+  await expect(request(`/sessions/${other.id}`)).rejects.toMatchObject({
     status: 404,
   });
-  expect(await request(`/sessions/${other.id}`)).toMatchObject({
-    name: "Outra sessão",
+  expect(await request(`/sessions/${session.id}`)).toMatchObject({
+    id: session.id,
   });
   expect(await request(`/datasets/${dataset.id}`)).toMatchObject({
     id: dataset.id,
   });
-  view.unmount();
-  render(<App />);
-  await screen.findByRole("link", { name: "Outra sessão" });
-  expect(
-    screen.queryByRole("link", { name: session.name }),
-  ).not.toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Excluir" }));
-  await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
-  await screen.findByText(
-    "Nenhuma sessão encontrada. Crie uma sessão para começar.",
-  );
 });
 
 it("mantém a sessão após falha na exclusão e permite tentar novamente no modal", async () => {
+  for (const run of runs)
+    await request(`/runs/${run.id}`, { method: "DELETE" });
   let calls = 0;
   server.use(
     http.delete(apiBase + `/sessions/${session.id}`, () => {
@@ -720,6 +724,11 @@ it("mantém a sessão após falha na exclusão e permite tentar novamente no mod
   await userEvent.click(
     within(link.closest("tr")!).getByRole("button", { name: "Excluir" }),
   );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Excluir sessão" }),
+    ).toBeEnabled(),
+  );
   await userEvent.click(screen.getByRole("button", { name: "Excluir sessão" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Falha ao excluir sessão",
@@ -729,103 +738,64 @@ it("mantém a sessão após falha na exclusão e permite tentar novamente no mod
   await waitFor(() => expect(calls).toBe(2));
 });
 
-it("exclui os candles com suas sessões e processamentos e limpa a seleção", async () => {
-  const secondSession = await request<{ id: string }>("/sessions", {
-    method: "POST",
-    body: JSON.stringify({
-      ...session,
-      id: undefined,
-      name: "Outra sessão BTC",
-    }),
-  });
-  const pending = await request<{ id: string }>(
-    `/sessions/${secondSession.id}/runs`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        strategy_id: runs[0].strategy_id,
-        parameters: runs[0].parameters,
-      }),
-    },
-  );
-  const otherDataset = await request<{ id: string }>("/datasets/binance", {
-    method: "POST",
-    body: JSON.stringify({ symbol: "ETHUSDT", interval: "5m" }),
-  });
-  const otherSession = await request<{ id: string }>("/sessions", {
-    method: "POST",
-    body: JSON.stringify({
-      ...session,
-      id: undefined,
-      dataset_id: otherDataset.id,
-      name: "Sessão ETH",
-    }),
-  });
-  const view = render(<Acquisition navigate={vi.fn()} />);
+it("bloqueia a exclusão dos candles vinculados e preserva sessões e processamentos", async () => {
+  const remove = vi.fn(() => new HttpResponse(null, { status: 204 }));
+  server.use(http.delete(apiBase + `/datasets/${dataset.id}`, remove));
+  render(<Acquisition navigate={vi.fn()} />);
   await userEvent.click(
     screen.getByRole("tab", { name: "Candles carregados" }),
   );
   const table = await screen.findByRole("table");
   const row = within(table).getAllByRole("row")[1];
   await userEvent.click(within(row).getByRole("button", { pressed: false }));
+  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
+  const modal = within(
+    screen.getByRole("alertdialog", { name: "Excluir conjunto de candles?" }),
+  );
+  expect(await modal.findByRole("alert")).toHaveTextContent(session.name);
+  expect(modal.getByRole("button", { name: "Excluir candles" })).toBeDisabled();
+  expect(remove).not.toHaveBeenCalled();
+  expect(await request(`/sessions/${session.id}`)).toMatchObject({
+    id: session.id,
+  });
+  for (const run of runs)
+    expect(await request(`/runs/${run.id}`)).toMatchObject({ id: run.id });
+  await userEvent.click(modal.getByRole("button", { name: "Cancelar" }));
+  expect(row).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Criar sessão" }),
   ).toBeInTheDocument();
-  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
-  const modal = screen.getByRole("alertdialog", {
-    name: "Excluir conjunto de candles?",
-  });
-  expect(modal).toHaveTextContent("todas as sessões que o utilizam");
-  expect(modal).toHaveTextContent(dataset.id);
-  await userEvent.click(
-    within(modal).getByRole("button", { name: "Cancelar" }),
-  );
-  expect(row).toBeInTheDocument();
-  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
-  await userEvent.click(
-    screen.getByRole("button", { name: "Excluir candles" }),
-  );
-  await waitFor(() => expect(row).not.toBeInTheDocument());
-  expect(
-    screen.queryByRole("button", { name: "Criar sessão" }),
-  ).not.toBeInTheDocument();
-  for (const id of [session.id, secondSession.id]) {
-    await expect(request(`/sessions/${id}`)).rejects.toMatchObject({
-      status: 404,
-    });
-  }
-  for (const id of [...runs.map((run) => run.id), pending.id]) {
-    await expect(request(`/runs/${id}`)).rejects.toMatchObject({ status: 404 });
-  }
-  await expect(request(`/datasets/${dataset.id}`)).rejects.toMatchObject({
-    status: 404,
-  });
-  await expect(
-    request(`/datasets/${dataset.id}/candles`),
-  ).rejects.toMatchObject({ status: 404 });
-  expect(await request(`/sessions/${otherSession.id}`)).toMatchObject({
-    id: otherSession.id,
-  });
-  expect(await request(`/datasets/${otherDataset.id}`)).toMatchObject({
-    id: otherDataset.id,
-  });
-  view.unmount();
+});
+
+it("exclui um conjunto sem sessões vinculadas e limpa a seleção", async () => {
+  for (const run of runs)
+    await request(`/runs/${run.id}`, { method: "DELETE" });
+  await request(`/sessions/${session.id}`, { method: "DELETE" });
   render(<Acquisition navigate={vi.fn()} />);
   await userEvent.click(
     screen.getByRole("tab", { name: "Candles carregados" }),
   );
-  const refreshed = await screen.findByRole("table");
-  expect(within(refreshed).getAllByRole("row")).toHaveLength(2);
-  await userEvent.click(
-    within(refreshed).getByRole("button", { name: "Excluir" }),
-  );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Excluir candles" }),
-  );
+  const table = await screen.findByRole("table");
+  const row = within(table).getAllByRole("row")[1];
+  await userEvent.click(within(row).getByRole("button", { pressed: false }));
+  await userEvent.click(within(row).getByRole("button", { name: "Excluir" }));
+  const confirm = screen.getByRole("button", { name: "Excluir candles" });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  await userEvent.click(confirm);
+  await waitFor(() => expect(row).not.toBeInTheDocument());
+  expect(
+    screen.queryByRole("button", { name: "Criar sessão" }),
+  ).not.toBeInTheDocument();
+  await expect(request(`/datasets/${dataset.id}`)).rejects.toMatchObject({
+    status: 404,
+  });
   await screen.findByText(/Nenhum conjunto carregado/);
 });
 
 it("mantém o conjunto selecionado após falha na exclusão e permite tentar novamente", async () => {
+  for (const run of runs)
+    await request(`/runs/${run.id}`, { method: "DELETE" });
+  await request(`/sessions/${session.id}`, { method: "DELETE" });
   let calls = 0;
   server.use(
     http.delete(apiBase + `/datasets/${dataset.id}`, () => {
@@ -849,6 +819,11 @@ it("mantém o conjunto selecionado após falha na exclusão e permite tentar nov
   const table = await screen.findByRole("table");
   await userEvent.click(within(table).getByRole("button", { pressed: false }));
   await userEvent.click(within(table).getByRole("button", { name: "Excluir" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Excluir candles" }),
+    ).toBeEnabled(),
+  );
   await userEvent.click(
     screen.getByRole("button", { name: "Excluir candles" }),
   );

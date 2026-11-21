@@ -43,6 +43,10 @@ export interface ParameterSchema {
   contentMediaType?: string;
   "x-min"?: string;
   "x-max"?: string;
+  "x-decimal-minimum"?: string;
+  "x-decimal-maximum"?: string;
+  "x-decimal-exclusiveMinimum"?: string;
+  "x-decimal-exclusiveMaximum"?: string;
   maxLength?: number;
   type: "integer" | "number" | "string";
   title?: string;
@@ -54,6 +58,9 @@ export interface ParameterSchema {
   pattern?: string;
 }
 export interface Strategy {
+  composition_role?: "signal" | "filter" | "exit";
+  components?: { strategy_id: string; role: "signal" | "filter" | "exit" }[];
+  combinable?: boolean;
   category?: "legacy" | "individual" | "combination";
   rules?: string;
   limitations?: string;
@@ -90,6 +97,7 @@ export interface Summary {
   max_drawdown_pct: Decimal;
 }
 export interface Run {
+  combination_snapshot?: StrategyCombination | null;
   id: string;
   session_id: string;
   strategy_id: string;
@@ -98,6 +106,23 @@ export interface Run {
   status: "queued" | "running" | "completed" | "failed";
   summary: Summary | null;
   error: ApiErrorBody | null;
+}
+export interface CombinationMember {
+  combination?: CombinationDefinition | null;
+  strategy_id: string;
+  parameters: Record<string, string | number>;
+}
+export interface CombinationDefinition {
+  name: string;
+  kind: "preset" | "custom" | "strategy";
+  strategy_id: string | null;
+  parameters: Record<string, string | number>;
+  members: CombinationMember[];
+  buy_rule: "all" | "any";
+  sell_rule: "all" | "any";
+}
+export interface StrategyCombination extends CombinationDefinition {
+  id: string;
 }
 export interface Indicator {
   open_time_ms: number;

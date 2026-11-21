@@ -1,3 +1,4 @@
+import { findConfigurationUsage } from "./configurationUsage";
 import type {
   ApiErrorBody,
   BinanceInput,
@@ -5,6 +6,8 @@ import type {
   Page,
   Run,
   Session,
+  CombinationDefinition,
+  StrategyCombination,
 } from "./types";
 export class ApiError extends Error {
   constructor(
@@ -80,11 +83,71 @@ export async function allPages<T>(
     : items;
 }
 export const api = {
+  combinations: (signal?: AbortSignal) =>
+    allPages<StrategyCombination>("/strategy-combinations", signal),
+  configurationUsage: async (
+    target: StrategyCombination,
+    signal?: AbortSignal,
+  ) => {
+    const [combinations, sessions] = await Promise.all([
+      allPages<StrategyCombination>(
+        "/strategy-combinations",
+        signal,
+        (item) => item.id,
+      ),
+      allPages<Session>("/sessions", signal, (item) => item.id),
+    ]);
+    const current = combinations.find((item) => item.id === target.id);
+    if (!current)
+      throw new Error(
+        "A configuração não está mais disponível. Atualize o catálogo.",
+      );
+    const runs: Run[] = [];
+    for (let index = 0; index < sessions.length; index += 4) {
+      const batches = await Promise.all(
+        sessions
+          .slice(index, index + 4)
+          .map((session) =>
+            allPages<Run>(
+              `/sessions/${encodeURIComponent(session.id)}/runs`,
+              signal,
+              (item) => item.id,
+            ),
+          ),
+      );
+      runs.push(...batches.flat());
+    }
+    return findConfigurationUsage(current, combinations, runs);
+  },
+  saveCombination: (
+    body: CombinationDefinition,
+    id?: string,
+    signal?: AbortSignal,
+  ) =>
+    request<StrategyCombination>(
+      "/strategy-combinations" + (id ? `/${encodeURIComponent(id)}` : ""),
+      { method: id ? "PUT" : "POST", body: JSON.stringify(body), signal },
+    ),
+  deleteCombination: (id: string, signal?: AbortSignal) =>
+    request<void>(`/strategy-combinations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      signal,
+    }),
+  datasetSessions: async (id: string, signal?: AbortSignal) =>
+    (
+      await allPages<Session>("/sessions", signal, (session) => session.id)
+    ).filter((session) => session.dataset_id === id),
   deleteDataset: (id: string, signal?: AbortSignal) =>
     request<void>(`/datasets/${encodeURIComponent(id)}`, {
       method: "DELETE",
       signal,
     }),
+  sessionRuns: (id: string, signal?: AbortSignal) =>
+    allPages<Run>(
+      `/sessions/${encodeURIComponent(id)}/runs`,
+      signal,
+      (run) => run.id,
+    ),
   deleteSession: (id: string, signal?: AbortSignal) =>
     request<void>(`/sessions/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -121,7 +184,9 @@ export const api = {
     }),
   createRun: (
     id: string,
-    body: Pick<Run, "strategy_id" | "parameters" | "auxiliary_filename">,
+    body:
+      | Pick<Run, "strategy_id" | "parameters" | "auxiliary_filename">
+      | { combination_id: string },
     signal?: AbortSignal,
   ) =>
     request<Run>(`/sessions/${encodeURIComponent(id)}/runs`, {

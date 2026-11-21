@@ -1,7 +1,7 @@
 {
   "name": "candlelab-web",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -15,6 +15,7 @@
     "format:check": "prettier --check src index.html package.json tsconfig.json vite.config.ts vitest.config.ts README.md"
   },
   "dependencies": {
+    "bootstrap-icons": "1.13.2",
     "jspdf": "4.2.1",
     "lightweight-charts": "5.2.0",
     "msw": "2.7.3",

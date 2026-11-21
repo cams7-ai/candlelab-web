@@ -1,20 +1,30 @@
+import { ruleLabel } from "./combinations";
 import { jsPDF } from "jspdf";
 import type {
   Candle,
+  CombinationDefinition,
   Dataset,
   Equity,
   Run,
   Session,
+  Strategy,
   TradeEvent,
 } from "./types";
 import { summaryLabels, summaryOrder } from "./financialSummary";
-import { datasetName, format, labels, utc } from "./utils";
+import {
+  datasetName,
+  format,
+  parameterLabel,
+  rateToPercent,
+  utc,
+} from "./utils";
 
 export interface RunReport {
   session: Session;
   dataset: Dataset;
   run: Run;
   strategyName: string;
+  strategies?: Strategy[];
   candles: Candle[];
   events: TradeEvent[];
   equity: Equity[];
@@ -73,23 +83,61 @@ export function buildRunPdf(report: RunReport) {
     header();
     y = 30;
   };
-  const title = (value: string) => {
-    if (y + 15 > bottom) newPage();
+  const title = (value: string, indent = 0) => {
+    doc.setFont("helvetica", "bold").setFontSize(12);
+    const lines: string[] = doc.splitTextToSize(value, contentWidth - indent);
+    if (y + lines.length * 5 + 19 > bottom) newPage();
     doc.setFont("helvetica", "bold");
-    text(value, margin, y, 12);
+    lines.forEach((line) => {
+      text(line, margin + indent, y, 12);
+      y += 5;
+    });
     doc.setFont("helvetica", "normal");
-    y += 7;
+    y += 2;
+  };
+  const paragraph = (value: string) => {
+    doc.setFont("helvetica", "normal").setFontSize(9);
+    const lines: string[] = doc.splitTextToSize(value, contentWidth);
+    lines.forEach((line) => {
+      if (y + 5 > bottom) newPage();
+      text(line, margin, y);
+      y += 4.5;
+    });
+    y += 5;
   };
   const table = (
     heading: string,
     headings: string[],
     rows: string[][],
     widths: number[],
+    indent = 0,
   ) => {
-    title(heading);
+    // Keep short tables intact; very long rows still paginate with repeated headers.
+    doc.setFont("helvetica", "normal").setFontSize(9);
+    const rowsHeight = rows.reduce(
+      (total, row) =>
+        total +
+        Math.max(
+          ...row.map((cell, index) =>
+            Math.max(1, doc.splitTextToSize(cell, widths[index] - 4).length),
+          ),
+        ) *
+          4 +
+        2,
+      0,
+    );
+    doc.setFont("helvetica", "bold").setFontSize(12);
+    const tableHeight =
+      doc.splitTextToSize(heading, contentWidth - indent).length * 5 +
+      16 +
+      rowsHeight;
+    if (tableHeight <= bottom - 30 && y + tableHeight > bottom) newPage();
+    title(heading, indent);
     const tableHead = () => {
-      doc.setFillColor("#e9f0f3").rect(margin, y - 4, contentWidth, 8, "F");
-      let x = margin;
+      doc
+        .setFillColor("#e9f0f3")
+        .rect(margin + indent, y - 4, contentWidth - indent, 8, "F");
+      let x = margin + indent;
       doc.setFont("helvetica", "bold");
       headings.forEach((label, i) => {
         text(label, x + 2, y + 1);
@@ -106,31 +154,58 @@ export function buildRunPdf(report: RunReport) {
       );
       const length = Math.max(...cells.map((cell) => cell.length));
       for (let offset = 0; offset < length; ) {
-        if (y + 7 > bottom) {
+        if (y + 6 > bottom) {
           newPage();
-          title(`${heading} (continuação)`);
+          title(`${heading} (continuação)`, indent);
           tableHead();
         }
         const count = Math.min(
           length - offset,
-          Math.max(1, Math.floor((bottom - y - 3) / 4)),
+          Math.max(1, Math.floor((bottom - y - 2) / 4)),
         );
-        let x = margin;
+        let x = margin + indent;
         cells.forEach((cell, i) => {
           cell
             .slice(offset, offset + count)
             .forEach((line, j) => text(line, x + 2, y + j * 4));
           x += widths[i];
         });
-        y += count * 4 + 3;
+        y += count * 4 + 2;
         doc
           .setDrawColor("#d7e1e6")
           .setLineWidth(0.2)
-          .line(margin, y - 4, width - margin, y - 4);
+          .line(margin + indent, y - 3, width - margin, y - 3);
         offset += count;
       }
     });
-    y += 5;
+    y += 3;
+  };
+  const snapshot = run.combination_snapshot;
+  const kindLabel = (definition: CombinationDefinition) =>
+    definition.kind === "strategy"
+      ? "Configuração personalizada"
+      : definition.kind === "preset"
+        ? "Combinação salva - receita publicada"
+        : "Combinação salva - composição livre";
+  const parameterRows = (
+    parameters: Record<string, string | number>,
+    strategyId: string | null,
+  ): string[][] => {
+    const rows = Object.entries(parameters).map(([key, value]) => [
+      parameterLabel(
+        key,
+        report.strategies?.find((strategy) => strategy.id === strategyId),
+      ),
+      key === "auxiliary_json"
+        ? (() => {
+            const count = JSON.parse(String(value)).length;
+            return count === 1
+              ? "1 observação importada"
+              : `${count} observações importadas`;
+          })()
+        : format(value),
+    ]);
+    return rows.length ? rows : [["Parâmetros", "Sem parâmetros adicionais."]];
   };
   header();
   table(
@@ -139,7 +214,16 @@ export function buildRunPdf(report: RunReport) {
     [
       ["Sessão", session.name],
       ["Processamento", run.id],
-      ["Estratégia", `${report.strategyName} | ${run.strategy_id}`],
+      [
+        "Tipo de configuração",
+        snapshot ? kindLabel(snapshot) : "Estratégia do catálogo",
+      ],
+      ["Nome", snapshot?.name ?? report.strategyName],
+      ["Estratégia executada (ID)", run.strategy_id],
+      ...(snapshot ? [["Cadastro de origem (ID)", snapshot.id]] : []),
+      ...(snapshot?.kind !== "custom" && snapshot?.strategy_id
+        ? [["Estratégia base (ID)", snapshot.strategy_id]]
+        : []),
       ["Conjunto", datasetName(dataset)],
       [
         "Mercado",
@@ -153,6 +237,29 @@ export function buildRunPdf(report: RunReport) {
     [48, contentWidth - 48],
   );
   table(
+    "Condições da simulação",
+    ["Condição", "Valor"],
+    [
+      [
+        "Caixa inicial do processamento",
+        `${format(run.summary.initial_cash)} ${dataset.quote_asset}`,
+      ],
+      [
+        "Taxa por preenchimento da sessão",
+        `${format(rateToPercent(session.fee_rate))}%`,
+      ],
+      ...(run.auxiliary_filename
+        ? [["Arquivo auxiliar JSON", run.auxiliary_filename]]
+        : []),
+    ],
+    [80, contentWidth - 80],
+  );
+  paragraph(
+    snapshot
+      ? "A composição e os parâmetros abaixo correspondem à cópia preservada neste processamento. Edições ou exclusões posteriores do cadastro de origem não alteram este histórico."
+      : "Os parâmetros abaixo correspondem aos valores efetivos registrados neste processamento.",
+  );
+  table(
     "Resumo financeiro",
     ["Métrica", "Valor"],
     summaryOrder.map((key) => {
@@ -164,22 +271,77 @@ export function buildRunPdf(report: RunReport) {
             ? "%"
             : typeof value === "number" || key === "final_position_qty"
               ? ""
-              : " USDT";
+              : ` ${dataset.quote_asset}`;
       return [summaryLabels[key], format(value) + unit];
     }),
     [65, contentWidth - 65],
   );
-  table(
-    "Parâmetros efetivos",
-    ["Parâmetro", "Valor"],
-    Object.entries(run.parameters).map(([key, value]) => [
-      labels[key] ?? key,
-      key === "auxiliary_json"
-        ? `${JSON.parse(String(value)).length} observações importadas`
-        : format(value),
-    ]),
-    [80, contentWidth - 80],
-  );
+  if (!snapshot) {
+    table(
+      "Parâmetros efetivos",
+      ["Parâmetro", "Valor"],
+      parameterRows(run.parameters, run.strategy_id),
+      [80, contentWidth - 80],
+    );
+  } else {
+    newPage();
+    title("Composição e parâmetros preservados");
+    paragraph(
+      snapshot.kind === "custom"
+        ? "A numeração e o recuo indicam a hierarquia dos grupos. Cada grupo mantém suas próprias regras de compra e venda."
+        : "A estratégia base e os parâmetros abaixo pertencem à configuração preservada na execução.",
+    );
+    const renderDefinition = (
+      definition: CombinationDefinition,
+      path = "",
+      depth = 0,
+    ) => {
+      const indent = Math.min(depth, 4) * 7;
+      const heading = path
+        ? `${path}. ${definition.kind === "custom" ? "Grupo" : "Configuração"}: ${definition.name}`
+        : `Configuração principal: ${definition.name}`;
+      const rows: string[][] = [["Tipo", kindLabel(definition)]];
+      if (definition.kind === "custom") {
+        rows.push(
+          ["Regra de compra", ruleLabel(definition.buy_rule)],
+          ["Regra de venda", ruleLabel(definition.sell_rule)],
+          ["Quantidade de membros", String(definition.members.length)],
+        );
+      } else {
+        rows.push(
+          ["Estratégia base (ID)", definition.strategy_id ?? "Não informado"],
+          ...parameterRows(definition.parameters, definition.strategy_id),
+        );
+      }
+      table(
+        heading,
+        ["Campo / parâmetro", "Valor"],
+        rows,
+        [80 - indent, contentWidth - 80],
+        indent,
+      );
+      if (definition.kind !== "custom") return;
+      definition.members.forEach((member, index) => {
+        const memberPath = path ? `${path}.${index + 1}` : String(index + 1);
+        if (member.combination)
+          renderDefinition(member.combination, memberPath, depth + 1);
+        else {
+          const memberIndent = Math.min(depth + 1, 4) * 7;
+          table(
+            `${memberPath}. Estratégia: ${member.strategy_id}`,
+            ["Campo / parâmetro", "Valor"],
+            [
+              ["Identificador", member.strategy_id],
+              ...parameterRows(member.parameters, member.strategy_id),
+            ],
+            [80 - memberIndent, contentWidth - 80],
+            memberIndent,
+          );
+        }
+      });
+    };
+    renderDefinition(snapshot);
+  }
 
   newPage();
   title("Candles e operações executadas");
@@ -292,7 +454,7 @@ export function buildRunPdf(report: RunReport) {
   }
   function titleAtEquity() {
     const points = [...equity].sort((a, b) => a.open_time_ms - b.open_time_ms);
-    text("Evolução do patrimônio (USDT)", left, 168, 10);
+    text(`Evolução do patrimônio (${dataset.quote_asset})`, left, 168, 10);
     const values = points.map((p) => Number(p.equity));
     const min = values.reduce((a, b) => Math.min(a, b), Infinity),
       max = values.reduce((a, b) => Math.max(a, b), -Infinity);

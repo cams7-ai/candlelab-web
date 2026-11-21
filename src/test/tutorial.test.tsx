@@ -1,3 +1,4 @@
+import { selectRunStrategy } from "./helpers/selectRunStrategy";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
@@ -11,10 +12,10 @@ import { server } from "./setup";
 
 vi.mock("../components/Chart", () => ({ Chart: () => <div /> }));
 
-it("publica 12 individuais e 6 combinações e preserva as quatro legadas", () => {
-  expect(strategies).toHaveLength(22);
+it("publica componentes reutilizáveis e preserva as 18 estratégias do tutorial e quatro legadas", () => {
+  expect(strategies).toHaveLength(34);
   expect(strategies.filter((s) => s.category === "individual")).toHaveLength(
-    12,
+    24,
   );
   expect(strategies.filter((s) => s.category === "combination")).toHaveLength(
     6,
@@ -48,11 +49,7 @@ it("edita e envia snapshot auxiliar preservando os decimais", async () => {
     }),
   );
   render(<NewRun id="demo-session" navigate={navigate} />);
-  await screen.findByRole("combobox");
-  await userEvent.selectOptions(
-    screen.getByRole("combobox"),
-    "MACHINE_LEARNING@1",
-  );
+  await selectRunStrategy("MACHINE_LEARNING@1");
   expect(screen.getByText(/Dados auxiliares obrigatórios/)).toHaveTextContent(
     "trained_until_ms",
   );
@@ -78,8 +75,7 @@ it("edita e envia snapshot auxiliar preservando os decimais", async () => {
 
 it("importa arquivo JSON e mostra erro antes de enviar conteúdo inválido", async () => {
   render(<NewRun id="demo-session" navigate={vi.fn()} />);
-  await screen.findByRole("combobox");
-  await userEvent.selectOptions(screen.getByRole("combobox"), "ARBITRAGE@1");
+  await selectRunStrategy("ARBITRAGE@1");
   const file = new File(
     ['[{"open_time_ms":1787097600000,"bid":"100"}]'],
     "aux.json",
@@ -105,11 +101,11 @@ it("importa arquivo JSON e mostra erro antes de enviar conteúdo inválido", asy
     screen.getByRole("button", { name: /Iniciar processamento/ }),
   );
   expect(await screen.findByRole("alert")).toHaveTextContent("JSON inválido");
-  await userEvent.selectOptions(screen.getByRole("combobox"), "DCA@1");
+  await selectRunStrategy("DCA@1");
   expect(
     screen.queryByLabelText("Dados auxiliares JSON"),
   ).not.toBeInTheDocument();
-  await userEvent.selectOptions(screen.getByRole("combobox"), "ARBITRAGE@1");
+  await selectRunStrategy("ARBITRAGE@1");
   expect(
     screen.queryByText("Arquivo carregado: aux.json"),
   ).not.toBeInTheDocument();
@@ -125,8 +121,7 @@ it("importa arquivo JSON e mostra erro antes de enviar conteúdo inválido", asy
 it("persiste o nome do arquivo importado e o exibe ao reabrir o detalhe", async () => {
   const navigate = vi.fn();
   const view = render(<NewRun id="demo-session" navigate={navigate} />);
-  await screen.findByRole("combobox");
-  await userEvent.selectOptions(screen.getByRole("combobox"), "ARBITRAGE@1");
+  await selectRunStrategy("ARBITRAGE@1");
   const raw = JSON.stringify(
     candles.map((candle) => ({
       open_time_ms: candle.open_time_ms,

@@ -1,6 +1,15 @@
 import { it, expect } from "vitest";
 import { buildRunPdf, reportBars } from "../runPdf";
-import { candles, dataset, makeSeries, runs, session } from "../mocks/fixtures";
+import { runParameterLabel } from "../combinations";
+import type { StrategyCombination } from "../types";
+import {
+  candles,
+  dataset,
+  makeSeries,
+  runs,
+  session,
+  strategies,
+} from "../mocks/fixtures";
 
 it("agrega OHLC em ordem preservando extremos e o período completo", () => {
   const bars = reportBars([...candles].reverse(), 2);
@@ -40,4 +49,253 @@ it("gera PDF paginado com valores extensos, parâmetros e histórico", () => {
   });
   expect(doc.output().startsWith("%PDF-")).toBe(true);
   expect(doc.getNumberOfPages()).toBeGreaterThan(3);
+});
+
+it.each(["strategy", "preset"] as const)(
+  "identifica o cadastro %s pela cópia preservada e inclui as condições e o arquivo auxiliar",
+  (kind) => {
+    const doc = buildRunPdf({
+      session,
+      dataset: { ...dataset, quote_asset: "BRL" },
+      candles: [],
+      events: [],
+      equity: [],
+      strategyName: "Nome atual que não pertence ao histórico",
+      run: {
+        ...runs[0],
+        auxiliary_filename: "previsoes-originais.json",
+        parameters: { threshold: "999" },
+        combination_snapshot: {
+          id: "cadastro-preservado",
+          name: "Configuração histórica",
+          kind,
+          strategy_id: "MACHINE_LEARNING@1",
+          parameters: {
+            threshold: "0.123456789012345678",
+            auxiliary_json: '[{"private_data":"não exportar o conteúdo"}]',
+          },
+          members: [],
+          buy_rule: "all",
+          sell_rule: "any",
+        },
+      },
+    });
+    const text = doc.internal.pages.flat().join("\n");
+    expect(text).toContain(
+      kind === "strategy" ? "Configuração personalizada" : "receita publicada",
+    );
+    expect(text).toContain("Configuração histórica");
+    expect(text).toContain("cadastro-preservado");
+    expect(text).toContain("MACHINE_LEARNING@1");
+    expect(text).toContain("0,123456789012345678");
+    expect(text).toContain("previsoes-originais.json");
+    expect(text).toContain("1 observação importada");
+    expect(text).toContain("0,1%");
+    expect(text).toContain("1000,00 BRL");
+    expect(text).not.toContain("Nome atual que não pertence");
+    expect(text).not.toContain("private_data");
+  },
+);
+
+it("preserva a hierarquia e as regras próprias de cada grupo no PDF", () => {
+  const doc = buildRunPdf({
+    session,
+    dataset,
+    candles: [],
+    events: [],
+    equity: [],
+    strategyName: "Cadastro editado depois da execução",
+    run: {
+      ...runs[0],
+      combination_snapshot: {
+        id: "raiz-historica",
+        name: "Grupo principal histórico",
+        kind: "custom",
+        strategy_id: null,
+        parameters: {},
+        buy_rule: "all",
+        sell_rule: "any",
+        members: [
+          {
+            strategy_id: "",
+            parameters: {},
+            combination: {
+              name: "Alternativas preservadas",
+              kind: "custom",
+              strategy_id: null,
+              parameters: {},
+              buy_rule: "any",
+              sell_rule: "all",
+              members: [
+                {
+                  strategy_id: "SMA_CROSS@1",
+                  parameters: { short_window: 3, long_window: 8 },
+                },
+                {
+                  strategy_id: "EMA_CROSS@1",
+                  parameters: { short_window: 5, long_window: 13 },
+                },
+              ],
+            },
+          },
+          {
+            strategy_id: "ADX_CONFIRMATION@1",
+            parameters: { adx_limit: "32.123456789" },
+          },
+        ],
+      },
+    },
+  });
+  const text = doc.internal.pages.flat().join("\n");
+  expect(text).toContain("1. Grupo: Alternativas preservadas");
+  expect(text).toContain("1.1. Estratégia: SMA_CROSS@1");
+  expect(text).toContain("1.2. Estratégia: EMA_CROSS@1");
+  expect(text).toContain("2. Estratégia: ADX_CONFIRMATION@1");
+  expect(text).toContain("Todas");
+  expect(text).toContain("Qualquer uma");
+  expect(text).toContain("32,123456789");
+  expect(text).not.toContain("Cadastro editado depois");
+});
+
+it("mantém os parâmetros registrados para estratégias sem cadastro salvo", () => {
+  const doc = buildRunPdf({
+    session,
+    dataset,
+    run: {
+      ...runs[0],
+      combination_snapshot: null,
+      parameters: { custom_parameter: "0.123456789" },
+    },
+    strategyName: "Estratégia original",
+    candles: [],
+    events: [],
+    equity: [],
+  });
+  const text = doc.internal.pages.flat().join("\n");
+  expect(text).toContain("Estratégia do catálogo");
+  expect(text).toContain("Estratégia original");
+  expect(text).toContain("0,123456789");
+  expect(text).not.toContain("Cadastro de origem");
+});
+
+it("usa os títulos dos campos do catálogo para estratégias e aplica os mesmos fallbacks da tela", () => {
+  const strategy = {
+    ...strategies[0],
+    parameters_schema: {
+      properties: {
+        short_window: {
+          type: "integer" as const,
+          title: "SMA curta exibida na tela",
+        },
+        long_window: { type: "integer" as const },
+      },
+    },
+  };
+  const doc = buildRunPdf({
+    session,
+    dataset,
+    candles: [],
+    events: [],
+    equity: [],
+    strategyName: strategy.name,
+    strategies: [strategy],
+    run: {
+      ...runs[0],
+      strategy_id: strategy.id,
+      combination_snapshot: null,
+      parameters: {
+        short_window: 9,
+        long_window: 21,
+        unknown_parameter: "0.123456789",
+      },
+    },
+  });
+  const text = doc.internal.pages.flat().join("\n");
+  expect(text).toContain("SMA curta exibida na tela");
+  expect(text).toContain("Janela longa");
+  expect(text).toContain("unknown_parameter");
+  expect(text).not.toContain("Janela curta");
+});
+
+it("resolve o nome de cada parâmetro pela estratégia correta em grupos e configurações aninhados", () => {
+  const catalog = strategies.map((strategy) => ({
+    ...strategy,
+    parameters_schema: {
+      ...strategy.parameters_schema,
+      properties: {
+        ...strategy.parameters_schema.properties,
+        short_window: {
+          type: "integer" as const,
+          title:
+            strategy.id === "SMA_CROSS@1"
+              ? "SMA curta exclusiva"
+              : "EMA curta exclusiva",
+        },
+      },
+    },
+  }));
+  const snapshot: StrategyCombination = {
+    id: "historico-com-rotulos",
+    name: "Grupo principal",
+    kind: "custom",
+    strategy_id: null,
+    parameters: {},
+    buy_rule: "all",
+    sell_rule: "any",
+    members: [
+      {
+        strategy_id: "",
+        parameters: {},
+        combination: {
+          name: "Grupo interno",
+          kind: "custom",
+          strategy_id: null,
+          parameters: {},
+          buy_rule: "any",
+          sell_rule: "all",
+          members: [
+            { strategy_id: "SMA_CROSS@1", parameters: { short_window: 3 } },
+            {
+              strategy_id: "",
+              parameters: {},
+              combination: {
+                name: "EMA personalizada",
+                kind: "strategy",
+                strategy_id: "EMA_CROSS@1",
+                parameters: { short_window: 5 },
+                members: [],
+                buy_rule: "all",
+                sell_rule: "any",
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const run = { ...runs[0], combination_snapshot: snapshot };
+  const doc = buildRunPdf({
+    session,
+    dataset,
+    run,
+    strategies: catalog,
+    strategyName: snapshot.name,
+    candles: [],
+    events: [],
+    equity: [],
+  });
+  const text = doc.internal.pages.flat().join("\n");
+  const first = text.indexOf("1.1. Estratégia: SMA_CROSS@1");
+  const second = text.indexOf("1.2. Configuração: EMA personalizada");
+  expect(first).toBeGreaterThan(-1);
+  expect(second).toBeGreaterThan(first);
+  expect(text.slice(first, second)).toContain("SMA curta exclusiva");
+  expect(text.slice(first, second)).not.toContain("EMA curta exclusiva");
+  expect(text.slice(second)).toContain("EMA curta exclusiva");
+  expect(runParameterLabel(run, "1 · 1 · short_window", catalog)).toBe(
+    "1 · 1 · SMA curta exclusiva",
+  );
+  expect(runParameterLabel(run, "1 · 2 · short_window", catalog)).toBe(
+    "1 · 2 · EMA curta exclusiva",
+  );
 });

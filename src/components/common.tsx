@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { Icon } from "./Icon";
+import type { ReactNode, Ref } from "react";
 import { ApiError } from "../api";
 import type { Dataset } from "../types";
 import { datasetName, utc } from "../utils";
@@ -12,18 +13,25 @@ export function ErrorNotice({
   return (
     <div role="alert" className="error">
       <strong>
+        <Icon name="warning" />
         {error instanceof Error ? error.message : "Ocorreu uma falha."}
       </strong>
       {error instanceof ApiError && error.body.error.details != null && (
         <pre>{JSON.stringify(error.body.error.details, null, 2)}</pre>
       )}
-      {retry && <button onClick={retry}>Tentar novamente</button>}
+      {retry && (
+        <button onClick={retry}>
+          <Icon name="refresh" />
+          Tentar novamente
+        </button>
+      )}
     </div>
   );
 }
 export function Loading() {
   return (
     <p role="status" className="muted loading">
+      <Icon name="loading" spin />
       Carregando…
     </p>
   );
@@ -34,13 +42,18 @@ export function Empty({ children }: { children: ReactNode }) {
 export function DatasetCard({
   dataset,
   children,
+  elementRef,
 }: {
   dataset?: Dataset;
   children?: ReactNode;
+  elementRef?: Ref<HTMLElement>;
 }) {
   return (
-    <aside className="panel dataset-card">
-      <h2>Conjunto selecionado</h2>
+    <aside ref={elementRef} className="panel dataset-card">
+      <h2>
+        <Icon name="database" />
+        Conjunto selecionado
+      </h2>
       {dataset ? (
         <>
           <h3>
