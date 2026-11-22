@@ -58,7 +58,7 @@ async function openImporter() {
 }
 
 async function configure(name: string) {
-  const summary = screen.getByText(`Configurar ${name}`);
+  const summary = screen.getByText(`Ver detalhes ${name}`);
   if (!summary.closest("details")?.open) await userEvent.click(summary);
 }
 
@@ -313,6 +313,7 @@ it("importa componentes em um novo cadastro sem alterar a origem ou suas regras"
   const derived = saved.find((item) => item.name === "Derivada")!;
   expect(derived.id).not.toBe(original.id);
   expect(derived.members[0].parameters.short_window).toBe(1);
+  expect(derived.members[1].parameters.short_window).toBe(2);
   expect(derived.buy_rule).toBe("all");
   expect(derived.sell_rule).toBe("any");
 });
@@ -537,4 +538,97 @@ it("resolve os parâmetros de indicadores dentro de grupos aninhados", () => {
     indicatorKey: "rsi",
     parameters: { short_window: 2, long_window: 3 },
   });
+});
+
+it("edita parâmetros compartilhados uma única vez e salva o valor em cada estratégia", async () => {
+  const view = render(<Combinations navigate={vi.fn()} />);
+  await userEvent.type(
+    await screen.findByLabelText("Nome da combinação"),
+    "Breakout unificado",
+  );
+  await addOptions("BREAKOUT@1");
+  fireEvent.change(
+    screen.getByLabelText("Multiplicador do stop móvel por ATR"),
+    {
+      target: { value: "0.2" },
+    },
+  );
+  await addOptions("ATR_EXIT@1", "VOLUME_CONFIRMATION@1");
+  const form = screen.getByRole("region", { name: "Parâmetros da combinação" });
+  expect(
+    within(form).getAllByLabelText("Multiplicador do stop móvel por ATR"),
+  ).toHaveLength(1);
+  expect(within(form).getAllByLabelText("Período do ATR")).toHaveLength(1);
+  expect(within(form).getAllByLabelText("Stop no fechamento (%)")).toHaveLength(
+    1,
+  );
+  const multiple = within(form).getByLabelText(
+    "Multiplicador do stop móvel por ATR",
+  );
+  expect(multiple).toHaveValue("0.2");
+  expect(multiple).toHaveAccessibleDescription(/Breakout, Saída trailing ATR/);
+  fireEvent.change(within(form).getByLabelText("Período do ATR"), {
+    target: { value: "21" },
+  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Salvar combinação" }),
+  );
+  await screen.findByText("Combinação “Breakout unificado” salva.");
+  const saved = (await api.combinations()).find(
+    (item) => item.name === "Breakout unificado",
+  )!;
+  for (const member of saved.members.slice(0, 2)) {
+    expect(member.parameters.atr_multiple).toBe("0.2");
+    expect(member.parameters.atr_period).toBe(21);
+  }
+  expect(saved.members[2].parameters).not.toHaveProperty("atr_multiple");
+  view.rerender(<Combinations navigate={vi.fn()} editId={saved.id} />);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Nome da combinação")).toHaveValue(saved.name),
+  );
+  expect(screen.getAllByLabelText("Período do ATR")).toHaveLength(1);
+  expect(screen.getByLabelText("Período do ATR")).toHaveValue("21");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Remover Breakout" }),
+  );
+  expect(
+    screen.getByLabelText("Multiplicador do stop móvel por ATR"),
+  ).toHaveValue("0.2");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Remover Saída trailing ATR" }),
+  );
+  expect(
+    screen.queryByLabelText("Multiplicador do stop móvel por ATR"),
+  ).not.toBeInTheDocument();
+});
+
+it("exige resolver valores diferentes de uma combinação salva antes de unificar", async () => {
+  const saved = await api.saveCombination({
+    ...definition("Valores distintos"),
+    members: [
+      { strategy_id: "BREAKOUT@1", parameters: { atr_multiple: "0.2" } },
+      { strategy_id: "ATR_EXIT@1", parameters: { atr_multiple: "3" } },
+    ],
+  });
+  render(<Combinations navigate={vi.fn()} editId={saved.id} />);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Nome da combinação")).toHaveValue(saved.name),
+  );
+  const input = screen.getByLabelText("Multiplicador do stop móvel por ATR");
+  expect(input).toHaveValue("");
+  expect(input).toBeInvalid();
+  expect(input).toHaveAccessibleDescription(
+    /Breakout: 0.2; Saída trailing ATR: 3/,
+  );
+  expect((await api.combinations())[0]).toEqual(saved);
+  fireEvent.change(input, { target: { value: "1.5" } });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Salvar combinação" }),
+  );
+  await screen.findByText("Combinação “Valores distintos” salva.");
+  expect(
+    (await api.combinations())[0].members.map(
+      (member) => member.parameters.atr_multiple,
+    ),
+  ).toEqual(["1.5", "1.5"]);
 });

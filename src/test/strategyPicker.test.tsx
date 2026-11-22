@@ -17,7 +17,7 @@ async function openPicker() {
   };
 }
 
-it("seleciona em várias categorias, confirma em lote e recolhe os parâmetros", async () => {
+it("seleciona em várias categorias, confirma em lote e exibe o formulário único", async () => {
   render(<Combinations navigate={vi.fn()} />);
   const { dialog } = await openPicker();
   const search = within(dialog).getByRole("searchbox", {
@@ -44,7 +44,7 @@ it("seleciona em várias categorias, confirma em lote e recolhe os parâmetros",
   );
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByText("2 de 8 adicionados")).toBeInTheDocument();
-  const configure = screen.getByText("Configurar SMA");
+  const configure = screen.getByText("Ver detalhes SMA");
   expect(configure.closest("details")).not.toHaveAttribute("open");
   await userEvent.click(configure);
   const short = screen.getByLabelText(/SMA curta/);

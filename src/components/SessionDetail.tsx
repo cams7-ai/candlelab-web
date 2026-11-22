@@ -150,26 +150,31 @@ export function SessionDetail({
     setExportError(undefined);
     try {
       const path = `/runs/${resource(result.id)}/series`;
-      const [events, equity, { downloadRunPdf }] = await Promise.all([
-        allPages<TradeEvent>(
-          path + "?kind=events",
-          controller.signal,
-          (event) => event.id,
-        ),
-        allPages<Equity>(path + "?kind=equity", controller.signal, (point) =>
-          String(point.open_time_ms),
-        ),
-        import("../runPdf"),
-      ]);
+      const [execution, events, equity, { downloadRunPdf }] = await Promise.all(
+        [
+          request<Run>(`/runs/${resource(result.id)}`, {
+            signal: controller.signal,
+          }),
+          allPages<TradeEvent>(
+            path + "?kind=events",
+            controller.signal,
+            (event) => event.id,
+          ),
+          allPages<Equity>(path + "?kind=equity", controller.signal, (point) =>
+            String(point.open_time_ms),
+          ),
+          import("../runPdf"),
+        ],
+      );
       if (!controller.signal.aborted)
         downloadRunPdf({
           session,
           dataset,
           candles,
-          run: result,
+          run: execution,
           events,
           equity,
-          strategyName: runStrategyName(result, query.data.strategies),
+          strategyName: runStrategyName(execution, query.data.strategies),
           strategies: query.data.strategies,
         });
     } catch (error) {

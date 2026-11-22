@@ -20,7 +20,9 @@ As seis receitas do tutorial usam funções de componentes compartilhadas com as
 
 As receitas preservam seus parâmetros, aquecimento, indicadores, motivos de sinal, sequência de atualizações e stops anteriores. Elas usam um contexto compartilhado de indicadores e estado para manter o comportamento histórico. A grade mantém sua política específica de espaçamento ATR e ordens limitadas. A configuração publicada continua sendo o caminho para executar exatamente essa receita.
 
-Para uma nova composição livre, os parâmetros de cada componente são independentes. Alterá-los ou mudar as regras de compra/venda cria outro comportamento; a interface não promete equivalência automática a uma receita publicada.
+Para uma nova composição livre, o formulário **Parâmetros da combinação** reúne os parâmetros dos componentes diretos. Campos com o mesmo identificador, nome e tipo são compartilhados, com indicação das estratégias que usam cada valor. Nomes genéricos como “Período” permanecem separados por estratégia para não misturar indicadores distintos. Alterar parâmetros ou regras de compra/venda cria outro comportamento; a interface não promete equivalência automática a uma receita publicada.
+
+Por exemplo, **Breakout** e **Saída trailing ATR** compartilham o período do ATR, o multiplicador do stop móvel por ATR e o stop no fechamento. Cada campo aparece uma vez e seu valor é enviado nos parâmetros de ambos os componentes, mantendo o contrato da API. Novos componentes herdam os valores compartilhados já preenchidos. Se uma edição ou importação contiver valores diferentes, o formulário mostra os valores de origem e exige definir um valor comum antes de salvar. Grupos incorporados mantêm sua configuração própria e não participam dessa unificação.
 
 ## Combinações cadastradas como grupos
 
@@ -46,7 +48,7 @@ Clique em **＋ Adicionar estratégia** para abrir o painel. Use a busca por nom
 
 Marque uma ou mais opções e confirme em **Adicionar selecionadas**. A seleção é preservada ao trocar de categoria ou buscar outro componente; cancelar ou pressionar Escape descarta a seleção pendente. Componentes já adicionados ficam sinalizados e não podem ser duplicados. O painel limita a seleção às vagas restantes no grupo de oito membros e mostra o motivo quando uma combinação cadastrada é incompatível.
 
-Os cartões mostram o nome e a função de cada componente. Abra **Configurar** para editar os parâmetros; grupos cadastrados oferecem **Ver configuração** para consultar a cópia preservada. Os identificadores e os componentes internos das receitas ficam em **Ver detalhes** no painel.
+Os cartões mostram o nome e a função de cada componente. Edite os parâmetros no formulário único abaixo dos cartões e abra **Ver detalhes** para consultar identificadores e componentes de receitas; grupos cadastrados oferecem **Ver configuração** para consultar a cópia preservada. Os identificadores e os componentes internos das receitas ficam em **Ver detalhes** no painel.
 
 ## Configurações personalizadas
 
@@ -61,3 +63,9 @@ Antes de excluir uma configuração personalizada, o popup consulta todas as pá
 As cópias incorporadas no contrato atual não contêm o identificador do cadastro de origem. Quando uma cópia da mesma estratégia base tem outro nome, a interface não consegue descartar um vínculo após edições e mantém a exclusão bloqueada, informando quais registros devem ser revisados. Configurações distintas identificadas diretamente nos processamentos não são confundidas apenas por usarem a mesma estratégia base.
 
 Falhas na consulta também mantêm a confirmação desabilitada, com opção de tentar novamente. A verificação é repetida imediatamente antes de enviar a exclusão. Além da validação na interface web, a API aplica a mesma restrição na camada de armazenamento e retorna HTTP 409 com o código `CONFIGURATION_IN_USE` quando há vínculos ou cópias de origem incerta.
+
+## Ajustes no novo processamento
+
+Após selecionar **Configuração ou combinação salva**, use **Editar parâmetros para esta execução**. Os campos começam com os valores do cadastro; parâmetros comuns aparecem uma única vez e grupos internos podem ser editados em suas próprias seções. As regras e os componentes da combinação são preservados. **Restaurar parâmetros salvos** descarta o rascunho. Trocar de cadastro inicia uma nova seleção; cancelar o seletor ou confirmar o mesmo cadastro preserva os ajustes.
+
+O formulário valida os parâmetros antes de iniciar. Sem alterações, o processamento continua enviando apenas `combination_id`. Com alterações, envia parâmetros próprios para a estratégia base ou a definição completa de uma composição livre em `definition_json`, usando o contrato existente da API. Nenhum cadastro é criado ou modificado. O histórico das composições livres, o PDF e os parâmetros dos indicadores são resolvidos pela definição efetivamente usada na execução.

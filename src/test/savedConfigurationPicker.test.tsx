@@ -2,7 +2,13 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, it, vi } from "vitest";
-import { api, apiBase } from "../api";
+import { api, apiBase, request } from "../api";
+import {
+  indicatorContext,
+  runParameters,
+  runStrategyName,
+} from "../combinations";
+import type { CombinationMember, Run } from "../types";
 import { NewRun } from "../components/NewRun";
 import { session } from "../mocks/fixtures";
 import { server } from "./setup";
@@ -214,4 +220,220 @@ it("mantém o JSON auxiliar recolhido com contagem de observações e permite in
   expect(details).toHaveAttribute("open");
   await waitFor(() => expect(details.querySelector("pre")).toBeVisible());
   expect(details).toHaveTextContent('"capacity_base":"1"');
+});
+
+it("edita uma configuração somente para a execução e valida seus parâmetros", async () => {
+  const { configuration } = await seed();
+  const sent = vi.fn();
+  const navigate = vi.fn();
+  server.use(
+    http.post(apiBase + `/sessions/${session.id}/runs`, async ({ request }) => {
+      sent(await request.json());
+      return HttpResponse.json({ id: "adjusted" }, { status: 202 });
+    }),
+  );
+  render(
+    <NewRun
+      id={session.id}
+      combinationId={configuration.id}
+      navigate={navigate}
+    />,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Editar parâmetros para esta execução",
+    }),
+  );
+  const short = screen.getByLabelText("SMA curta");
+  expect(short).toHaveValue("3");
+  await userEvent.clear(short);
+  await userEvent.type(short, "10");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Iniciar processamento" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "janela curta menor",
+  );
+  expect(sent).not.toHaveBeenCalled();
+  expect(short).toHaveValue("10");
+  await userEvent.clear(short);
+  await userEvent.type(short, "5");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Iniciar processamento" }),
+  );
+  await waitFor(() => expect(navigate).toHaveBeenCalled());
+  expect(sent).toHaveBeenCalledWith({
+    strategy_id: "SMA_CROSS@1",
+    parameters: expect.objectContaining({ short_window: 5, long_window: 8 }),
+  });
+  expect(
+    (await api.combinations()).find((item) => item.id === configuration.id),
+  ).toEqual(configuration);
+});
+
+it("edita os parâmetros compartilhados e grupos internos sem alterar os cadastros", async () => {
+  const group = {
+    name: "Grupo ATR",
+    kind: "custom" as const,
+    strategy_id: null,
+    parameters: {},
+    buy_rule: "all" as const,
+    sell_rule: "any" as const,
+    members: [
+      { strategy_id: "BREAKOUT@1", parameters: { atr_multiple: "2" } },
+      { strategy_id: "ATR_EXIT@1", parameters: { atr_multiple: "2" } },
+    ],
+  };
+  const saved = await api.saveCombination({
+    ...group,
+    name: "Com grupos",
+    members: [
+      ...group.members,
+      { strategy_id: "", parameters: {}, combination: group },
+    ],
+  });
+  const navigate = vi.fn();
+  render(
+    <NewRun id={session.id} combinationId={saved.id} navigate={navigate} />,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Editar parâmetros para esta execução",
+    }),
+  );
+  const root = within(
+    screen.getAllByRole("region", { name: "Parâmetros da combinação" })[0],
+  );
+  expect(
+    root.getAllByLabelText("Multiplicador do stop móvel por ATR"),
+  ).toHaveLength(1);
+  await userEvent.clear(
+    root.getByLabelText("Multiplicador do stop móvel por ATR"),
+  );
+  await userEvent.type(
+    root.getByLabelText("Multiplicador do stop móvel por ATR"),
+    "0.2",
+  );
+  const nested = within(
+    screen.getByRole("region", { name: "Parâmetros do grupo Grupo ATR" }),
+  );
+  await userEvent.clear(nested.getByLabelText("Período do ATR"));
+  await userEvent.type(nested.getByLabelText("Período do ATR"), "21");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Iniciar processamento" }),
+  );
+  await waitFor(() => expect(navigate).toHaveBeenCalled());
+  const runId = new URL(
+    navigate.mock.calls[0][0],
+    "http://local",
+  ).searchParams.get("run")!;
+  const run = await request<Run>(`/runs/${runId}`);
+  const definition = JSON.parse(String(run.parameters.definition_json));
+  expect(definition).not.toHaveProperty("id");
+  expect(
+    definition.members
+      .slice(0, 2)
+      .map((member: CombinationMember) => member.parameters.atr_multiple),
+  ).toEqual(["0.2", "0.2"]);
+  expect(
+    definition.members[2].combination.members.map(
+      (member: CombinationMember) => member.parameters.atr_period,
+    ),
+  ).toEqual([21, 21]);
+  expect(runStrategyName(run)).toBe(saved.name);
+  expect(runParameters(run)).toContainEqual(["1 · atr_multiple", "0.2"]);
+  expect(
+    indicatorContext(run, "member_3__member_1__atr").parameters.atr_period,
+  ).toBe(21);
+  expect(
+    (await api.combinations()).find((item) => item.id === saved.id),
+  ).toEqual(saved);
+});
+
+it("preserva ajustes ao cancelar a seleção e restaura os parâmetros salvos", async () => {
+  const { configuration, recipe } = await seed();
+  const sent = vi.fn();
+  server.use(
+    http.post(apiBase + `/sessions/${session.id}/runs`, async ({ request }) => {
+      sent(await request.json());
+      return HttpResponse.json({ id: "restored" }, { status: 202 });
+    }),
+  );
+  render(
+    <NewRun
+      id={session.id}
+      combinationId={configuration.id}
+      navigate={vi.fn()}
+    />,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Editar parâmetros para esta execução",
+    }),
+  );
+  const input = screen.getByLabelText("SMA curta");
+  await userEvent.clear(input);
+  await userEvent.type(input, "5");
+  const { dialog } = await open();
+  await userEvent.click(dialog.getByRole("radio", { name: recipe.name }));
+  await userEvent.click(dialog.getByRole("button", { name: "Cancelar" }));
+  expect(input).toHaveValue("5");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Restaurar parâmetros salvos" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Iniciar processamento" }),
+  );
+  await waitFor(() =>
+    expect(sent).toHaveBeenCalledWith({ combination_id: configuration.id }),
+  );
+});
+
+it("edita uma receita salva e redefine o rascunho ao trocar de cadastro", async () => {
+  const { configuration, recipe } = await seed();
+  const sent = vi.fn();
+  server.use(
+    http.post(apiBase + `/sessions/${session.id}/runs`, async ({ request }) => {
+      sent(await request.json());
+      return HttpResponse.json({ id: "recipe-adjusted" }, { status: 202 });
+    }),
+  );
+  render(
+    <NewRun
+      id={session.id}
+      combinationId={configuration.id}
+      navigate={vi.fn()}
+    />,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Editar parâmetros para esta execução",
+    }),
+  );
+  const { dialog } = await open();
+  await userEvent.click(dialog.getByRole("radio", { name: recipe.name }));
+  await userEvent.click(
+    dialog.getByRole("button", { name: "Usar configuração" }),
+  );
+  expect(screen.queryByLabelText("SMA curta")).not.toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", {
+      name: "Editar parâmetros para esta execução",
+    }),
+  );
+  const stop = screen.getByLabelText("Stop no fechamento (%)");
+  await userEvent.clear(stop);
+  await userEvent.type(stop, "4.5");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Iniciar processamento" }),
+  );
+  await waitFor(() =>
+    expect(sent).toHaveBeenCalledWith({
+      strategy_id: "EMA_ADX_ATR@1",
+      parameters: expect.objectContaining({ stop_pct: "4.5" }),
+    }),
+  );
+  expect(
+    (await api.combinations()).find((item) => item.id === recipe.id),
+  ).toEqual(recipe);
 });

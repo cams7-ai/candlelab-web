@@ -1,4 +1,4 @@
-import { ruleLabel } from "./combinations";
+import { ruleLabel, runCombination } from "./combinations";
 import { jsPDF } from "jspdf";
 import type {
   Candle,
@@ -180,7 +180,7 @@ export function buildRunPdf(report: RunReport) {
     });
     y += 3;
   };
-  const snapshot = run.combination_snapshot;
+  const snapshot = runCombination(run);
   const kindLabel = (definition: CombinationDefinition) =>
     definition.kind === "strategy"
       ? "Configuração personalizada"
@@ -218,9 +218,11 @@ export function buildRunPdf(report: RunReport) {
         "Tipo de configuração",
         snapshot ? kindLabel(snapshot) : "Estratégia do catálogo",
       ],
-      ["Nome", snapshot?.name ?? report.strategyName],
+      ["Nome de referência", snapshot?.name ?? report.strategyName],
       ["Estratégia executada (ID)", run.strategy_id],
-      ...(snapshot ? [["Cadastro de origem (ID)", snapshot.id]] : []),
+      ...(run.combination_snapshot
+        ? [["Cadastro de origem (ID)", run.combination_snapshot.id]]
+        : []),
       ...(snapshot?.kind !== "custom" && snapshot?.strategy_id
         ? [["Estratégia base (ID)", snapshot.strategy_id]]
         : []),
@@ -256,7 +258,7 @@ export function buildRunPdf(report: RunReport) {
   );
   paragraph(
     snapshot
-      ? "A composição e os parâmetros abaixo correspondem à cópia preservada neste processamento. Edições ou exclusões posteriores do cadastro de origem não alteram este histórico."
+      ? "A composição e os parâmetros abaixo correspondem aos valores efetivos registrados neste processamento. O nome é uma referência; valores incluídos nele não substituem as tabelas de parâmetros. Edições posteriores do cadastro de origem não alteram esta execução."
       : "Os parâmetros abaixo correspondem aos valores efetivos registrados neste processamento.",
   );
   table(

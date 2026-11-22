@@ -64,14 +64,18 @@ it.each(["strategy", "preset"] as const)(
       run: {
         ...runs[0],
         auxiliary_filename: "previsoes-originais.json",
-        parameters: { threshold: "999" },
+        strategy_id: "MACHINE_LEARNING@1",
+        parameters: {
+          threshold: "0.123456789012345678",
+          auxiliary_json: '[{"private_data":"não exportar o conteúdo"}]',
+        },
         combination_snapshot: {
           id: "cadastro-preservado",
           name: "Configuração histórica",
           kind,
           strategy_id: "MACHINE_LEARNING@1",
           parameters: {
-            threshold: "0.123456789012345678",
+            threshold: "999",
             auxiliary_json: '[{"private_data":"não exportar o conteúdo"}]',
           },
           members: [],
@@ -94,6 +98,7 @@ it.each(["strategy", "preset"] as const)(
     expect(text).toContain("1000,00 BRL");
     expect(text).not.toContain("Nome atual que não pertence");
     expect(text).not.toContain("private_data");
+    expect(text).not.toContain("(999) Tj");
   },
 );
 
@@ -297,5 +302,94 @@ it("resolve o nome de cada parâmetro pela estratégia correta em grupos e confi
   );
   expect(runParameterLabel(run, "1 · 2 · short_window", catalog)).toBe(
     "1 · 2 · EMA curta exclusiva",
+  );
+});
+
+it("exporta os parâmetros e grupos da definição ajustada usada na execução", () => {
+  const definition = {
+    name: "Combinação ajustada",
+    kind: "custom",
+    strategy_id: null,
+    parameters: {},
+    buy_rule: "all",
+    sell_rule: "any",
+    members: [
+      {
+        strategy_id: "SMA_CROSS@1",
+        parameters: { short_window: 4, long_window: 12 },
+      },
+      {
+        strategy_id: "EMA_CROSS@1",
+        parameters: { short_window: 5, long_window: 13 },
+      },
+    ],
+  };
+  const run = {
+    ...runs[0],
+    strategy_id: "CUSTOM_COMBINATION@1",
+    combination_snapshot: null,
+    parameters: { definition_json: JSON.stringify(definition) },
+  };
+  const doc = buildRunPdf({
+    session,
+    dataset,
+    run,
+    strategyName: definition.name,
+    candles: [],
+    events: [],
+    equity: [],
+  });
+  const text = doc.internal.pages.flat().join("\n");
+  expect(text).toContain(definition.name);
+  expect(text).toContain("1. Estratégia: SMA_CROSS@1");
+  expect(text).toContain("2. Estratégia: EMA_CROSS@1");
+  expect(text).not.toContain("definition_json");
+  expect(text).not.toContain("Cadastro de origem (ID)");
+});
+
+it("prioriza a definição efetiva mesmo quando o snapshot conserva parâmetros da origem", () => {
+  const origin: StrategyCombination = {
+    id: "origin",
+    name: "ATR original (0.2)",
+    kind: "custom",
+    strategy_id: null,
+    parameters: {},
+    buy_rule: "all",
+    sell_rule: "any",
+    members: [
+      { strategy_id: "BREAKOUT@1", parameters: { atr_multiple: "0.2" } },
+      { strategy_id: "ATR_EXIT@1", parameters: { atr_multiple: "0.2" } },
+    ],
+  };
+  const execution = {
+    ...origin,
+    name: "Execução ajustada",
+    members: origin.members.map((member) => ({
+      ...member,
+      parameters: { atr_multiple: "2.3456789" },
+    })),
+  };
+  const run = {
+    ...runs[0],
+    strategy_id: "CUSTOM_COMBINATION@1",
+    combination_snapshot: origin,
+    parameters: { definition_json: JSON.stringify(execution) },
+  };
+  const doc = buildRunPdf({
+    session,
+    dataset,
+    run,
+    strategyName: origin.name,
+    strategies,
+    candles: [],
+    events: [],
+    equity: [],
+  });
+  const text = doc.internal.pages.flat().join("\n");
+  expect(text).toContain("Execução ajustada");
+  expect(text.match(/2,3456789/g)).toHaveLength(2);
+  expect(text).not.toContain("ATR original");
+  expect(runParameterLabel(run, "1 · atr_multiple", strategies)).toBe(
+    "1 · Multiplicador do stop móvel por ATR",
   );
 });

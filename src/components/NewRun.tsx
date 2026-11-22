@@ -3,13 +3,20 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, request, resource } from "../api";
 import { strategyRole, strategyWorkspacePath } from "../strategies";
 import { useQuery } from "../hooks";
-import type { Dataset, Session, Strategy } from "../types";
+import type {
+  CombinationDefinition,
+  Dataset,
+  Session,
+  Strategy,
+} from "../types";
 import {
   format,
   parameterLabel,
   parameterValue,
   rateToPercent,
 } from "../utils";
+import { normalizeCombination } from "../combinations";
+import { RunCombinationParameters } from "./RunCombinationParameters";
 import { CombinationSummary } from "./CombinationSummary";
 import { StrategyPicker } from "./StrategyPicker";
 import { Empty, ErrorNotice, Loading } from "./common";
@@ -60,6 +67,8 @@ export function NewRun({
         ),
     ) ?? [];
   const combination = runnable.find((item) => item.id === selectedCombination);
+  const [combinationDraft, setCombinationDraft] =
+    useState<CombinationDefinition>();
   const [strategyId, setStrategyId] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [savedPickerOpen, setSavedPickerOpen] = useState(false);
@@ -112,10 +121,36 @@ export function NewRun({
                 ],
               ),
             );
+      let savedRun:
+        | { combination_id: string }
+        | { strategy_id: string; parameters: Record<string, string | number> } =
+        { combination_id: combination?.id ?? "" };
+      if (mode === "combination" && combinationDraft) {
+        const definition = normalizeCombination(
+          combinationDraft,
+          query.data!.catalog,
+        );
+        const original = normalizeCombination(
+          combination!,
+          query.data!.catalog,
+        );
+        if (JSON.stringify(definition) !== JSON.stringify(original)) {
+          savedRun =
+            definition.kind === "custom"
+              ? {
+                  strategy_id: "CUSTOM_COMBINATION@1",
+                  parameters: { definition_json: JSON.stringify(definition) },
+                }
+              : {
+                  strategy_id: definition.strategy_id!,
+                  parameters: definition.parameters,
+                };
+        }
+      }
       const run = await api.createRun(
         id,
         mode === "combination"
-          ? { combination_id: combination!.id }
+          ? savedRun
           : {
               strategy_id: strategy!.id,
               parameters,
@@ -178,7 +213,7 @@ export function NewRun({
                       <small className="muted">
                         {value === "strategy"
                           ? "Defina os parâmetros para esta execução."
-                          : "Use os parâmetros de um cadastro existente."}
+                          : "Use ou ajuste os parâmetros de um cadastro existente."}
                       </small>
                     </span>
                   </label>
@@ -258,16 +293,59 @@ export function NewRun({
                       )}
                       {combination && (
                         <>
-                          <CombinationSummary
-                            key={combination.id}
-                            combination={combination}
-                            strategies={query.data.catalog}
-                          />
                           <p className="muted">
-                            O processamento guardará uma cópia desta
-                            configuração. Edições posteriores no cadastro não
-                            alteram seu histórico.
+                            Ajuste os parâmetros para esta execução. O cadastro
+                            salvo e os processamentos anteriores permanecem
+                            inalterados.
                           </p>
+                          {combinationDraft ? (
+                            <fieldset
+                              className="combination-fields"
+                              disabled={busy}
+                            >
+                              <RunCombinationParameters
+                                definition={combinationDraft}
+                                strategies={query.data.catalog}
+                                onChange={setCombinationDraft}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCombinationDraft(undefined);
+                                  setError(undefined);
+                                }}
+                              >
+                                Restaurar parâmetros salvos
+                              </button>
+                              <details>
+                                <summary>Ver resumo da execução</summary>
+                                <CombinationSummary
+                                  combination={combinationDraft}
+                                  strategies={query.data.catalog}
+                                />
+                              </details>
+                            </fieldset>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  setCombinationDraft(
+                                    structuredClone(combination),
+                                  )
+                                }
+                              >
+                                <Icon name="settings" />
+                                Editar parâmetros para esta execução
+                              </button>
+                              <CombinationSummary
+                                key={combination.id}
+                                combination={combination}
+                                strategies={query.data.catalog}
+                              />
+                            </>
+                          )}
                         </>
                       )}
                     </>
@@ -542,6 +620,7 @@ export function NewRun({
           selectedId={combination?.id}
           onClose={() => setSavedPickerOpen(false)}
           onSelect={(selected) => {
+            if (selected.id !== combination?.id) setCombinationDraft(undefined);
             setSelectedCombination(selected.id);
             setError(undefined);
           }}

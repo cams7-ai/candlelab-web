@@ -1,3 +1,7 @@
+import {
+  CombinationParameters,
+  appendCombinationMembers,
+} from "./CombinationParameters";
 import { CombinationSummary } from "./CombinationSummary";
 import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -160,11 +164,11 @@ export function Combinations({
       return "Esta seleção ultrapassa o limite de 64 estratégias nos grupos.";
     setDraft({
       ...draft,
-      members: [...draft.members, ...structuredClone(additions)],
+      members: appendCombinationMembers(draft.members, additions, strategies),
     });
     setError(undefined);
     setNotice(
-      `${additions.length} componente(s) adicionado(s). Configure os parâmetros nos cartões abaixo.`,
+      `${additions.length} componente(s) adicionado(s). Configure os parâmetros no formulário abaixo.`,
     );
   }
   function recipe(strategy: Strategy | undefined) {
@@ -377,8 +381,8 @@ export function Combinations({
                 <>
                   <p className="muted">
                     Combine de 2 a 8 sinais, filtros, saídas ou combinações.
-                    Configure os componentes e escolha suas regras de compra e
-                    venda.
+                    Preencha os parâmetros no formulário único e escolha suas
+                    regras de compra e venda.
                   </p>
                   <div className="field-grid">
                     {(["buy_rule", "sell_rule"] as const).map((key) => (
@@ -504,7 +508,7 @@ export function Combinations({
                               <Icon name="settings" />
                               {member.combination
                                 ? "Ver configuração"
-                                : "Configurar"}{" "}
+                                : "Ver detalhes"}{" "}
                               {name}
                             </summary>
                             {member.combination ? (
@@ -518,25 +522,6 @@ export function Combinations({
                                   Identificador: {member.strategy_id}
                                 </p>
                                 {recipe(strategy)}
-                                {parameterFields(
-                                  strategy,
-                                  member.parameters,
-                                  (key, value) =>
-                                    setDraft({
-                                      ...draft,
-                                      members: draft.members.map((m, i) =>
-                                        i === index
-                                          ? {
-                                              ...m,
-                                              parameters: {
-                                                ...m.parameters,
-                                                [key]: value,
-                                              },
-                                            }
-                                          : m,
-                                      ),
-                                    }),
-                                )}
                               </>
                             )}
                           </details>
@@ -550,6 +535,11 @@ export function Combinations({
                       </p>
                     )}
                   </section>
+                  <CombinationParameters
+                    members={draft.members}
+                    strategies={strategies}
+                    onChange={(members) => setDraft({ ...draft, members })}
+                  />
                   <details className="combination-import">
                     <summary>
                       <Icon name="import" />

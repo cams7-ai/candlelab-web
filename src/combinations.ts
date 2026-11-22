@@ -1,4 +1,4 @@
-import { parameterLabel } from "./utils";
+import { parameterLabel, strategyParameters } from "./utils";
 import type {
   CombinationDefinition,
   CombinationMember,
@@ -7,11 +7,82 @@ import type {
   StrategyCombination,
 } from "./types";
 
+// The API also accepts a complete custom definition for a single execution.
+export function normalizeCombination(
+  definition: CombinationDefinition,
+  strategies: Strategy[],
+): CombinationDefinition {
+  const normalize = (
+    id: string | null,
+    values: Record<string, string | number>,
+  ) => {
+    const strategy = strategies.find((item) => item.id === id);
+    if (!strategy)
+      throw new Error(`Estratégia indisponível: ${id ?? "sem identificador"}.`);
+    return strategyParameters(strategy, values);
+  };
+  return {
+    name: definition.name,
+    kind: definition.kind,
+    strategy_id: definition.strategy_id,
+    buy_rule: definition.buy_rule,
+    sell_rule: definition.sell_rule,
+    parameters:
+      definition.kind === "custom"
+        ? {}
+        : normalize(definition.strategy_id, definition.parameters),
+    members:
+      definition.kind === "custom"
+        ? definition.members.map((member) =>
+            member.combination
+              ? {
+                  ...member,
+                  parameters: {},
+                  combination: normalizeCombination(
+                    member.combination,
+                    strategies,
+                  ),
+                }
+              : {
+                  ...member,
+                  parameters: normalize(member.strategy_id, member.parameters),
+                },
+          )
+        : [],
+  };
+}
+
+export function runCombination(run: Run): CombinationDefinition | null {
+  if (run.strategy_id === "CUSTOM_COMBINATION@1") {
+    try {
+      const definition = JSON.parse(String(run.parameters.definition_json));
+      if (
+        definition?.kind === "custom" &&
+        typeof definition.name === "string" &&
+        Array.isArray(definition.members)
+      )
+        return definition;
+    } catch {
+      /* Historical runs may not contain a valid custom definition. */
+    }
+  }
+  const snapshot = run.combination_snapshot;
+  if (!snapshot) return null;
+  if (
+    snapshot.kind !== "custom" &&
+    snapshot.strategy_id === run.strategy_id &&
+    Object.keys(run.parameters).length
+  ) {
+    return { ...snapshot, parameters: run.parameters };
+  }
+  return snapshot;
+}
+
 export const ruleLabel = (rule: "all" | "any") =>
   rule === "all" ? "Todas" : "Qualquer uma";
 export function runStrategyName(run: Run, strategies: Strategy[] = []) {
   return (
-    run.combination_snapshot?.name ??
+    runCombination(run)?.name ??
     strategies.find((s) => s.id === run.strategy_id)?.name ??
     run.strategy_id
   );
@@ -49,8 +120,9 @@ export function combinationParameters(
   ];
 }
 export function runParameters(run: Run): [string, string | number][] {
-  return run.combination_snapshot
-    ? combinationParameters(run.combination_snapshot)
+  const definition = runCombination(run);
+  return definition
+    ? combinationParameters(definition)
     : Object.entries(run.parameters);
 }
 
@@ -85,8 +157,9 @@ export function runParameterLabel(
   key: string,
   strategies: Strategy[],
 ): string {
-  return run.combination_snapshot
-    ? combinationParameterLabel(run.combination_snapshot, key, strategies)
+  const definition = runCombination(run);
+  return definition
+    ? combinationParameterLabel(definition, key, strategies)
     : parameterLabel(
         key,
         strategies.find((item) => item.id === run.strategy_id),
@@ -121,12 +194,14 @@ export function compositionCompatible(
 
 export function indicatorContext(run: Run | undefined, key: string) {
   let indicatorKey = key;
-  let definition: CombinationDefinition | undefined | null =
-    run?.combination_snapshot;
+  let definition: CombinationDefinition | undefined | null = run
+    ? runCombination(run)
+    : null;
   let parameters = run?.parameters ?? {};
   let match: RegExpMatchArray | null;
   while ((match = indicatorKey.match(/^member_(\d+)__/))) {
-    const member = definition?.members[Number(match[1]) - 1];
+    const member: CombinationMember | undefined =
+      definition?.members[Number(match[1]) - 1];
     parameters = member?.combination?.parameters ?? member?.parameters ?? {};
     definition = member?.combination;
     indicatorKey = indicatorKey.slice(match[0].length);

@@ -838,3 +838,32 @@ it("mantém o conjunto selecionado após falha na exclusão e permite tentar nov
   );
   await waitFor(() => expect(calls).toBe(2));
 });
+
+it("consulta o detalhe completo da execução ao exportar, preservando os parâmetros efetivos", async () => {
+  vi.mocked(downloadRunPdf).mockClear();
+  const execution = {
+    ...runs[1],
+    parameters: { short_window: 7, long_window: 30 },
+  };
+  server.use(
+    http.get(apiBase + `/runs/${runs[1].id}`, () =>
+      HttpResponse.json(execution),
+    ),
+  );
+  render(
+    <SessionDetail id={session.id} runId={runs[0].id} navigate={vi.fn()} />,
+  );
+  const comparison = (
+    await screen.findByRole("heading", { name: "Comparar processamentos" })
+  ).parentElement!;
+  const row = within(comparison)
+    .getByRole("button", { name: new RegExp(runs[1].id) })
+    .closest("tr")!;
+  await userEvent.click(
+    within(row).getByRole("button", { name: "Exportar PDF" }),
+  );
+  await waitFor(() => expect(downloadRunPdf).toHaveBeenCalledOnce());
+  expect(downloadRunPdf).toHaveBeenCalledWith(
+    expect.objectContaining({ run: execution }),
+  );
+});
