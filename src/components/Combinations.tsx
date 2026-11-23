@@ -1,3 +1,4 @@
+import { JsonParameterInput } from "./JsonParameterInput";
 import {
   CombinationParameters,
   appendCombinationMembers,
@@ -213,61 +214,73 @@ export function Combinations({
   function parameterFields(
     strategy: Strategy | undefined,
     values: Record<string, string | number>,
-    change: (key: string, value: string) => void,
+    change: (key: string, value: string, filename?: string) => void,
   ) {
     return (
       strategy && (
         <div className="field-grid">
           {Object.entries(strategy.parameters_schema.properties).map(
-            ([key, schema]) => (
-              <label key={key}>
-                {parameterLabel(key, strategy)}
-                {schema.enum ? (
-                  <ParameterSelect
-                    label={parameterLabel(key, strategy)}
-                    schema={schema}
-                    value={String(
-                      values[key] ??
-                        strategy.defaults[key] ??
-                        schema.default ??
-                        "",
-                    )}
-                    onChange={(value) => change(key, value)}
-                  />
-                ) : schema.contentMediaType === "application/json" ? (
-                  <textarea
-                    required
-                    rows={5}
-                    value={String(
-                      values[key] ?? strategy.defaults[key] ?? "[]",
-                    )}
-                    onChange={(e) => change(key, e.target.value)}
-                  />
-                ) : (
-                  <input
-                    required
-                    inputMode={
-                      schema.type === "integer" ? "numeric" : "decimal"
-                    }
-                    value={String(
-                      values[key] ??
-                        strategy.defaults[key] ??
-                        schema.default ??
-                        "",
-                    )}
-                    onChange={(e) => change(key, e.target.value)}
-                  />
-                )}
-                <small className="muted">
-                  {schema.description ??
-                    (schema.type === "integer"
-                      ? "Inteiro"
-                      : schema.contentMediaType
-                        ? "Dados auxiliares JSON específicos do dataset"
-                        : "Decimal")}
-                </small>
-              </label>
-            ),
+            ([key, schema]) => {
+              const FieldLabel =
+                schema.contentMediaType === "application/json"
+                  ? "div"
+                  : "label";
+              return (
+                <FieldLabel key={key}>
+                  {schema.contentMediaType !== "application/json" &&
+                    parameterLabel(key, strategy)}
+                  {schema.enum ? (
+                    <ParameterSelect
+                      label={parameterLabel(key, strategy)}
+                      schema={schema}
+                      value={String(
+                        values[key] ??
+                          strategy.defaults[key] ??
+                          schema.default ??
+                          "",
+                      )}
+                      onChange={(value) => change(key, value)}
+                    />
+                  ) : schema.contentMediaType === "application/json" ? (
+                    <JsonParameterInput
+                      key={strategy.id}
+                      inputId={`combination-preset-${key}`}
+                      label={parameterLabel(key, strategy)}
+                      filename={draft.auxiliary_filename}
+                      schema={schema}
+                      value={String(
+                        values[key] ?? strategy.defaults[key] ?? "[]",
+                      )}
+                      onChange={(value, filename) =>
+                        change(key, value, filename)
+                      }
+                    />
+                  ) : (
+                    <input
+                      required
+                      inputMode={
+                        schema.type === "integer" ? "numeric" : "decimal"
+                      }
+                      value={String(
+                        values[key] ??
+                          strategy.defaults[key] ??
+                          schema.default ??
+                          "",
+                      )}
+                      onChange={(e) => change(key, e.target.value)}
+                    />
+                  )}
+                  <small className="muted">
+                    {schema.description ??
+                      (schema.type === "integer"
+                        ? "Inteiro"
+                        : schema.contentMediaType
+                          ? "Dados auxiliares JSON específicos do dataset"
+                          : "Decimal")}
+                  </small>
+                </FieldLabel>
+              );
+            },
           )}
         </div>
       )
@@ -622,6 +635,7 @@ export function Combinations({
                           ...draft,
                           strategy_id: e.target.value,
                           parameters: {},
+                          auxiliary_filename: undefined,
                         })
                       }
                     >
@@ -640,9 +654,12 @@ export function Combinations({
                   {parameterFields(
                     strategies.find((s) => s.id === draft.strategy_id),
                     draft.parameters,
-                    (key, value) =>
+                    (key, value, filename) =>
                       setDraft({
                         ...draft,
+                        ...(key === "auxiliary_json"
+                          ? { auxiliary_filename: filename }
+                          : {}),
                         parameters: { ...draft.parameters, [key]: value },
                       }),
                   )}

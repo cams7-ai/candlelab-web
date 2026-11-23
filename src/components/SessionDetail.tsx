@@ -1,5 +1,7 @@
 import { Icon } from "./Icon";
 import {
+  isAuxiliaryParameter,
+  runAuxiliaryFiles,
   runParameterLabel,
   runParameterValue,
   runParameters,
@@ -472,24 +474,22 @@ export function SessionDetail({
                 <>
                   <p className="muted">{name(run)}</p>
                   <dl>
-                    {run.auxiliary_filename && (
-                      <div className="metric">
-                        <dt>Arquivo auxiliar JSON</dt>
-                        <dd className="auxiliary-filename">
-                          {run.auxiliary_filename}
-                        </dd>
-                      </div>
-                    )}
-                    {runParameters(run).map(([k, v]) => (
-                      <div className="metric" key={k}>
-                        <dt>{runParameterLabel(run, k, strategies)}</dt>
-                        <dd>
-                          {k === "auxiliary_json"
-                            ? `${JSON.parse(String(v)).length} observações importadas`
-                            : format(runParameterValue(run, k, v, strategies))}
-                        </dd>
+                    {runAuxiliaryFiles(run).map(([label, filename]) => (
+                      <div className="metric" key={label}>
+                        <dt>{label}</dt>
+                        <dd className="auxiliary-filename">{filename}</dd>
                       </div>
                     ))}
+                    {runParameters(run)
+                      .filter(([key]) => !isAuxiliaryParameter(key))
+                      .map(([k, v]) => (
+                        <div className="metric" key={k}>
+                          <dt>{runParameterLabel(run, k, strategies)}</dt>
+                          <dd>
+                            {format(runParameterValue(run, k, v, strategies))}
+                          </dd>
+                        </div>
+                      ))}
                   </dl>
                 </>
               ) : (
@@ -546,12 +546,17 @@ export function SessionDetail({
                       </button>
                     </td>
                     <td className="parameters-cell">
-                      {runParameters(r)
-                        .map(
-                          ([k, v]) =>
-                            `${runParameterLabel(r, k, strategies)}: ${k === "auxiliary_json" ? "snapshot JSON importado" : format(runParameterValue(r, k, v, strategies))}`,
-                        )
-                        .join(" · ")}
+                      {[
+                        ...runAuxiliaryFiles(r).map(
+                          ([label, filename]) => `${label}: ${filename}`,
+                        ),
+                        ...runParameters(r)
+                          .filter(([key]) => !isAuxiliaryParameter(key))
+                          .map(
+                            ([k, v]) =>
+                              `${runParameterLabel(r, k, strategies)}: ${format(runParameterValue(r, k, v, strategies))}`,
+                          ),
+                      ].join(" · ")}
                     </td>
                     <td title={`${format(r.summary!.final_equity)} USDT`}>
                       {format(Number(r.summary!.final_equity).toFixed(2))} USDT

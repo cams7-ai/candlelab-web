@@ -296,3 +296,36 @@ it("reutiliza uma configuração de filtro em combinação com seu papel preserv
   expect(combo.members[1].combination?.strategy_id).toBe(saved.strategy_id);
   expect(combo.members[1].combination?.parameters.adx_limit).toBe("30");
 });
+
+it("preserva o nome do arquivo auxiliar importado na configuração personalizada", async () => {
+  render(
+    <StrategyDetail
+      id="MACHINE_LEARNING@1"
+      source="catalog"
+      navigate={vi.fn()}
+    />,
+  );
+  const form = await editor();
+  const raw =
+    '[{"open_time_ms":60000,"probability":"0.7","trained_until_ms":0,"model_id":"modelo"}]';
+  const file = new File([raw], "previsoes.json", { type: "application/json" });
+  Object.defineProperty(file, "text", { value: async () => raw });
+  await userEvent.upload(
+    within(form).getByLabelText("Importar dados auxiliares JSON"),
+    file,
+  );
+  await waitFor(() =>
+    expect(within(form).getByLabelText("Dados auxiliares JSON")).toHaveValue(
+      raw,
+    ),
+  );
+  await userEvent.click(
+    within(form).getByRole("button", { name: "Salvar configuração" }),
+  );
+  await waitFor(async () =>
+    expect((await api.combinations())[0]?.auxiliary_filename).toBe(
+      "previsoes.json",
+    ),
+  );
+  expect((await api.combinations())[0].parameters.auxiliary_json).toBe(raw);
+});

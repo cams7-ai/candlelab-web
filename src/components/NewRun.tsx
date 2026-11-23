@@ -124,8 +124,11 @@ export function NewRun({
             );
       let savedRun:
         | { combination_id: string }
-        | { strategy_id: string; parameters: Record<string, string | number> } =
-        { combination_id: combination?.id ?? "" };
+        | {
+            strategy_id: string;
+            parameters: Record<string, string | number>;
+            auxiliary_filename?: string | null;
+          } = { combination_id: combination?.id ?? "" };
       if (mode === "combination" && combinationDraft) {
         const definition = normalizeCombination(
           combinationDraft,
@@ -145,6 +148,9 @@ export function NewRun({
               : {
                   strategy_id: definition.strategy_id!,
                   parameters: definition.parameters,
+                  ...(definition.auxiliary_filename
+                    ? { auxiliary_filename: definition.auxiliary_filename }
+                    : {}),
                 };
         }
       }

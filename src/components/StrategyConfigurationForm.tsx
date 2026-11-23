@@ -24,6 +24,9 @@ export function StrategyConfigurationForm({
     ...strategy.defaults,
     ...existing?.parameters,
   });
+  const [auxiliaryFilename, setAuxiliaryFilename] = useState(
+    existing?.auxiliary_filename,
+  );
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<unknown>();
@@ -48,6 +51,9 @@ export function StrategyConfigurationForm({
       if (!name.trim()) throw new Error("Informe o nome da configuração.");
       const saved = await api.saveCombination(
         {
+          ...(auxiliaryFilename
+            ? { auxiliary_filename: auxiliaryFilename }
+            : {}),
           name: name.trim(),
           kind: strategy.category === "combination" ? "preset" : "strategy",
           strategy_id: strategy.id,
@@ -132,6 +138,7 @@ export function StrategyConfigurationForm({
                               ...previous,
                               [key]: raw,
                             }));
+                            setAuxiliaryFilename(file.name);
                             setError(undefined);
                           } catch (error) {
                             if (current === revision.current) setError(error);
@@ -149,6 +156,7 @@ export function StrategyConfigurationForm({
                         onChange={(event) => {
                           revision.current++;
                           setImporting(false);
+                          setAuxiliaryFilename(undefined);
                           setValues({ ...values, [key]: event.target.value });
                         }}
                       />

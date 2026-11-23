@@ -8,7 +8,14 @@ import {
   summary,
   makeSeries,
 } from "./fixtures";
-import type { BinanceInput, Candle, Dataset, Run, Session } from "../types";
+import type {
+  BinanceInput,
+  Candle,
+  Dataset,
+  Run,
+  Session,
+  Strategy,
+} from "../types";
 import { gridCount, gridCombinationError, memberKey } from "../combinations";
 import {
   findConfigurationUsage,
@@ -20,6 +27,29 @@ import {
   strategyParameters,
 } from "../utils";
 import type { CombinationDefinition, StrategyCombination } from "../types";
+function combinable(strategy: Strategy) {
+  return (
+    !["DCA@1"].includes(strategy.id) &&
+    (!strategy.required_data?.length ||
+      strategy.id === "RANKING_CONFIRMATION@1")
+  );
+}
+
+function auxiliaryMembers(
+  definition: CombinationDefinition,
+): { strategy_id: string; parameters: Record<string, string | number> }[] {
+  if (definition.kind !== "custom")
+    return [
+      {
+        strategy_id: definition.strategy_id!,
+        parameters: definition.parameters,
+      },
+    ];
+  return definition.members.flatMap((member) =>
+    member.combination ? auxiliaryMembers(member.combination) : [member],
+  );
+}
+
 interface Store {
   combinations: StrategyCombination[];
   datasets: Dataset[];
@@ -82,6 +112,9 @@ function normalizeCombination(
     return parsed;
   };
   const definition: CombinationDefinition = {
+    ...(body.auxiliary_filename
+      ? { auxiliary_filename: body.auxiliary_filename }
+      : {}),
     name: body.name.trim(),
     kind: body.kind,
     strategy_id: body.strategy_id ?? null,
@@ -110,10 +143,7 @@ function normalizeCombination(
     )
       throw new Error("Selecione uma combinação publicada.");
     const strategy = strategies.find((s) => s.id === definition.strategy_id)!;
-    if (
-      depth > 1 &&
-      (["DCA@1"].includes(strategy.id) || strategy.required_data?.length)
-    )
+    if (depth > 1 && !combinable(strategy))
       throw new Error(
         "Combinação publicada incompatível com composição Spot OHLCV.",
       );
@@ -148,11 +178,7 @@ function normalizeCombination(
       }
       counter.leaves += 1;
       const strategy = strategies.find((s) => s.id === member.strategy_id);
-      if (
-        !strategy ||
-        ["DCA@1"].includes(strategy.id) ||
-        strategy.required_data?.length
-      )
+      if (!strategy || !combinable(strategy))
         throw new Error("Estratégia incompatível com composição Spot OHLCV.");
       return {
         ...member,
@@ -274,8 +300,7 @@ export const handlers = [
     HttpResponse.json({
       items: strategies.map((strategy) => ({
         ...strategy,
-        combinable:
-          !["DCA@1"].includes(strategy.id) && !strategy.required_data?.length,
+        combinable: combinable(strategy),
       })),
     }),
   ),
@@ -585,6 +610,9 @@ export const handlers = [
                   ),
                 }
               : structuredClone(combination.parameters),
+          ...(combination.auxiliary_filename
+            ? { auxiliary_filename: combination.auxiliary_filename }
+            : {}),
           combination_snapshot: structuredClone(combination),
         }
       : (incoming as Pick<
@@ -596,28 +624,48 @@ export const handlers = [
       !strategies.some((s) => s.id === body.strategy_id)
     )
       return error(422, "Estratégia inexistente.", { field: "strategy_id" });
-    const strategy = strategies.find((s) => s.id === body.strategy_id)!;
-    if (strategy?.required_data?.length) {
-      try {
-        const rows = JSON.parse(String(body.parameters.auxiliary_json));
+    try {
+      const sources =
+        body.strategy_id === "CUSTOM_COMBINATION@1"
+          ? auxiliaryMembers(
+              JSON.parse(String(body.parameters.definition_json)),
+            )
+          : [{ strategy_id: body.strategy_id, parameters: body.parameters }];
+      for (const source of sources) {
+        const strategy = strategies.find((s) => s.id === source.strategy_id);
+        if (!strategy?.required_data?.length) continue;
+        const rows = JSON.parse(String(source.parameters.auxiliary_json));
         const sess = store.sessions.find((s) => s.id === params.id)!;
         const data = store.candles[sess.dataset_id];
+        const ranking = [
+          "RANKING_CONFIRMATION@1",
+          "MOMENTUM_RANKING@1",
+        ].includes(source.strategy_id);
+        if (
+          ranking &&
+          store.datasets.find((d) => d.id === sess.dataset_id)?.symbol !==
+            "BTCUSDT"
+        )
+          return error(422, "Esta estratégia relativa exige dataset BTCUSDT.");
         if (
           !Array.isArray(rows) ||
           rows.length !== data.length ||
           rows.some(
             (row, index) =>
               row.open_time_ms !== data[index].open_time_ms ||
-              strategy.required_data!.some((key) => row[key] == null),
+              strategy.required_data!.some((key) => row[key] == null) ||
+              (ranking &&
+                (!row.universe?.BTCUSDT ||
+                  Object.keys(row.universe).length < 2)),
           )
         )
           return error(
             422,
             "Dados auxiliares incompletos: importe uma observação por candle e todos os campos exigidos.",
           );
-      } catch {
-        return error(422, "Dados auxiliares: JSON inválido.");
       }
+    } catch {
+      return error(422, "Dados auxiliares: JSON inválido.");
     }
     const run: Run = {
       ...body,

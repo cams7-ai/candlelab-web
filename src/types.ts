@@ -114,11 +114,13 @@ export interface Run {
   error: ApiErrorBody | null;
 }
 export interface CombinationMember {
+  auxiliary_filename?: string | null;
   combination?: CombinationDefinition | null;
   strategy_id: string;
   parameters: Record<string, string | number>;
 }
 export interface CombinationDefinition {
+  auxiliary_filename?: string | null;
   name: string;
   kind: "preset" | "custom" | "strategy";
   strategy_id: string | null;

@@ -1,4 +1,9 @@
-import { ruleLabel, runCombination } from "./combinations";
+import {
+  isAuxiliaryParameter,
+  runAuxiliaryFiles,
+  ruleLabel,
+  runCombination,
+} from "./combinations";
 import { jsPDF } from "jspdf";
 import type {
   Candle,
@@ -192,26 +197,21 @@ export function buildRunPdf(report: RunReport) {
     parameters: Record<string, string | number>,
     strategyId: string | null,
   ): string[][] => {
-    const rows = Object.entries(parameters).map(([key, value]) => [
-      parameterLabel(
-        key,
-        report.strategies?.find((strategy) => strategy.id === strategyId),
-      ),
-      key === "auxiliary_json"
-        ? (() => {
-            const count = JSON.parse(String(value)).length;
-            return count === 1
-              ? "1 observação importada"
-              : `${count} observações importadas`;
-          })()
-        : format(
-            parameterDisplayValue(
-              value,
-              report.strategies?.find((strategy) => strategy.id === strategyId)
-                ?.parameters_schema.properties[key],
-            ),
+    const rows = Object.entries(parameters)
+      .filter(([key]) => !isAuxiliaryParameter(key))
+      .map(([key, value]) => [
+        parameterLabel(
+          key,
+          report.strategies?.find((strategy) => strategy.id === strategyId),
+        ),
+        format(
+          parameterDisplayValue(
+            value,
+            report.strategies?.find((strategy) => strategy.id === strategyId)
+              ?.parameters_schema.properties[key],
           ),
-    ]);
+        ),
+      ]);
     return rows.length ? rows : [["Parâmetros", "Sem parâmetros adicionais."]];
   };
   header();
@@ -257,9 +257,7 @@ export function buildRunPdf(report: RunReport) {
         "Taxa por preenchimento da sessão",
         `${format(rateToPercent(session.fee_rate))}%`,
       ],
-      ...(run.auxiliary_filename
-        ? [["Arquivo auxiliar JSON", run.auxiliary_filename]]
-        : []),
+      ...runAuxiliaryFiles(run),
     ],
     [80, contentWidth - 80],
   );

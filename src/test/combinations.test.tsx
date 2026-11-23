@@ -717,3 +717,74 @@ it("o demo rejeita duas grades em grupos internos mesmo em chamadas diretas", as
     }),
   ).rejects.toMatchObject({ status: 422 });
 });
+
+it("importa JSON, salva e reabre uma combinação com Seleção por ranking", async () => {
+  const view = render(<Combinations navigate={vi.fn()} />);
+  await screen.findByLabelText("Nome da combinação");
+  await userEvent.type(
+    screen.getByLabelText("Nome da combinação"),
+    "SMA com ranking",
+  );
+  await addOptions("SMA_CROSS@1", "ranking");
+  expect(
+    screen.getByText(/Seleção por ranking exige um dataset BTCUSDT/),
+  ).toBeVisible();
+  const raw = JSON.stringify([
+    {
+      open_time_ms: 60000,
+      universe: {
+        BTCUSDT: { roc: "5", liquidity: "2000000" },
+        ETHUSDT: { roc: "2", liquidity: "2000000" },
+      },
+    },
+  ]);
+  const file = new File([raw], "ranking.json", { type: "application/json" });
+  Object.defineProperty(file, "text", { value: async () => raw });
+  await userEvent.upload(
+    screen.getByLabelText("Importar dados auxiliares JSON"),
+    file,
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("Dados auxiliares JSON")).toHaveValue(raw),
+  );
+  expect(screen.getByText("Arquivo carregado: ranking.json")).toBeVisible();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Salvar combinação" }),
+  );
+  await screen.findByText("Combinação “SMA com ranking” salva.");
+  const saved = (await api.combinations()).find(
+    (item) => item.name === "SMA com ranking",
+  )!;
+  expect(
+    saved.members.find(
+      (member) => member.strategy_id === "RANKING_CONFIRMATION@1",
+    )?.parameters.auxiliary_json,
+  ).toBe(raw);
+  expect(
+    saved.members.find(
+      (member) => member.strategy_id === "RANKING_CONFIRMATION@1",
+    )?.auxiliary_filename,
+  ).toBe("ranking.json");
+  view.rerender(<Combinations navigate={vi.fn()} editId={saved.id} />);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Dados auxiliares JSON")).toHaveValue(raw),
+  );
+  expect(screen.getByText("Arquivo carregado: ranking.json")).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Dados auxiliares JSON"), {
+    target: { value: raw + " " },
+  });
+  expect(
+    screen.queryByText("Arquivo carregado: ranking.json"),
+  ).not.toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Salvar combinação" }),
+  );
+  await screen.findByText("Combinação “SMA com ranking” salva.");
+  expect(
+    (await api.combinations())
+      .find((item) => item.id === saved.id)
+      ?.members.find(
+        (member) => member.strategy_id === "RANKING_CONFIRMATION@1",
+      )?.auxiliary_filename,
+  ).toBeUndefined();
+});

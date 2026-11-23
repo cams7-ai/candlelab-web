@@ -93,7 +93,8 @@ it.each(["strategy", "preset"] as const)(
     expect(text).toContain("MACHINE_LEARNING@1");
     expect(text).toContain("0,123456789012345678");
     expect(text).toContain("previsoes-originais.json");
-    expect(text).toContain("1 observação importada");
+    expect(text).not.toContain("observação importada");
+    expect(text).not.toContain("Dados auxiliares JSON");
     expect(text).toContain("0,1%");
     expect(text).toContain("1000,00 BRL");
     expect(text).not.toContain("Nome atual que não pertence");

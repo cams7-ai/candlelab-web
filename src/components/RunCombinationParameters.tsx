@@ -19,6 +19,7 @@ export function RunCombinationParameters({
           {
             strategy_id: definition.strategy_id ?? "",
             parameters: definition.parameters,
+            auxiliary_filename: definition.auxiliary_filename,
           },
         ];
   return (
@@ -31,7 +32,11 @@ export function RunCombinationParameters({
           onChange(
             definition.kind === "custom"
               ? { ...definition, members: updated }
-              : { ...definition, parameters: updated[0].parameters },
+              : {
+                  ...definition,
+                  parameters: updated[0].parameters,
+                  auxiliary_filename: updated[0].auxiliary_filename,
+                },
           )
         }
       />

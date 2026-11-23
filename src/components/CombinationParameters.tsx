@@ -1,3 +1,4 @@
+import { JsonParameterInput } from "./JsonParameterInput";
 import type { CombinationMember, ParameterSchema, Strategy } from "../types";
 import { ParameterSelect } from "./ParameterSelect";
 import { parameterLabel } from "../utils";
@@ -88,6 +89,9 @@ export function appendCombinationMembers(
     for (const target of field.targets) {
       if (target.index >= members.length) {
         combined[target.index].parameters[target.key] = existing[0].value;
+        if (target.key === "auxiliary_json")
+          combined[target.index].auxiliary_filename =
+            members[existing[0].index].auxiliary_filename;
       }
     }
   }
@@ -117,15 +121,30 @@ export function CombinationParameters({
         Preencha cada parâmetro uma única vez. Os campos compartilhados são
         aplicados a todas as estratégias indicadas.
       </p>
+      {fields.some((field) =>
+        field.targets.some(
+          (target) => target.strategy.id === "RANKING_CONFIRMATION@1",
+        ),
+      ) && (
+        <p className="muted">
+          Seleção por ranking exige um dataset BTCUSDT e dados auxiliares JSON
+          com uma observação por abertura de candle. Cada observação deve conter
+          open_time_ms e universe com ROC e liquidez de BTCUSDT e pelo menos
+          outra moeda. O ranking filtra compras; perder a seleção não gera uma
+          venda.
+        </p>
+      )}
       <div className="field-grid">
         {fields.map((field, index) => {
           const { schema, targets } = field;
+          const FieldLabel =
+            schema.contentMediaType === "application/json" ? "div" : "label";
           const conflict = targets.some(
             (target) => !sameValue(target.value, targets[0].value, schema),
           );
           const helpId = `${idPrefix}-parameter-${index}-help`;
           const value = conflict ? "" : targets[0].value;
-          const change = (value: string) => {
+          const change = (value: string, filename?: string) => {
             onChange(
               members.map((member, memberIndex) => {
                 const target = targets.find(
@@ -134,6 +153,9 @@ export function CombinationParameters({
                 return target
                   ? {
                       ...member,
+                      ...(target.key === "auxiliary_json"
+                        ? { auxiliary_filename: filename }
+                        : {}),
                       parameters: { ...member.parameters, [target.key]: value },
                     }
                   : member;
@@ -142,8 +164,8 @@ export function CombinationParameters({
           };
           return (
             <div key={field.id}>
-              <label>
-                {field.label}
+              <FieldLabel>
+                {schema.contentMediaType !== "application/json" && field.label}
                 {schema.enum ? (
                   <ParameterSelect
                     label={field.label}
@@ -153,12 +175,18 @@ export function CombinationParameters({
                     describedBy={helpId}
                   />
                 ) : schema.contentMediaType === "application/json" ? (
-                  <textarea
-                    required
-                    rows={5}
+                  <JsonParameterInput
+                    inputId={`${helpId}-json`}
+                    label={field.label}
+                    filename={
+                      conflict
+                        ? undefined
+                        : members[targets[0].index].auxiliary_filename
+                    }
+                    schema={schema}
                     value={value}
-                    aria-describedby={helpId}
-                    onChange={(event) => change(event.target.value)}
+                    describedBy={helpId}
+                    onChange={change}
                   />
                 ) : (
                   <input
@@ -172,7 +200,7 @@ export function CombinationParameters({
                     onChange={(event) => change(event.target.value)}
                   />
                 )}
-              </label>
+              </FieldLabel>
               <div id={helpId} className="muted">
                 <small>
                   {schema.description ??

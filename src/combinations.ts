@@ -26,6 +26,9 @@ export function normalizeCombination(
     return strategyParameters(strategy, values);
   };
   return {
+    ...(definition.auxiliary_filename
+      ? { auxiliary_filename: definition.auxiliary_filename }
+      : {}),
     name: definition.name,
     kind: definition.kind,
     strategy_id: definition.strategy_id,
@@ -123,6 +126,10 @@ export function combinationParameters(
     ),
   ];
 }
+export function isAuxiliaryParameter(key: string): boolean {
+  return key.split(" · ").at(-1) === "auxiliary_json";
+}
+
 export function runParameters(run: Run): [string, string | number][] {
   const definition = runCombination(run);
   return definition
@@ -177,6 +184,39 @@ export function combinationParameterValue(
     value,
     context.strategy?.parameters_schema.properties[context.key],
   );
+}
+
+export function runAuxiliaryFiles(run: Run): [string, string][] {
+  const definition = runCombination(run);
+  const files: [string, string][] = [];
+  function visit(definition: CombinationDefinition, path: string[] = []) {
+    if (definition.kind !== "custom") {
+      if (definition.auxiliary_filename)
+        files.push([
+          [...path, "Arquivo auxiliar JSON"].join(" · "),
+          definition.auxiliary_filename,
+        ]);
+      return;
+    }
+    definition.members.forEach((member, index) => {
+      const prefix = [...path, String(index + 1)];
+      if (member.combination) visit(member.combination, prefix);
+      else if (member.auxiliary_filename)
+        files.push([
+          [...prefix, "Arquivo auxiliar JSON"].join(" · "),
+          member.auxiliary_filename,
+        ]);
+    });
+  }
+  if (definition?.kind === "custom") {
+    if (run.auxiliary_filename)
+      files.push(["Arquivo auxiliar JSON", run.auxiliary_filename]);
+    visit(definition);
+  } else {
+    const filename = run.auxiliary_filename ?? definition?.auxiliary_filename;
+    if (filename) files.push(["Arquivo auxiliar JSON", filename]);
+  }
+  return files;
 }
 
 export function runParameterValue(

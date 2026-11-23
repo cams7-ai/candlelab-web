@@ -145,7 +145,7 @@ export const componentCatalog: Strategy[] = [
       "Permite compras quando BTC está no ranking líquido; requer universo externo.",
     limitations: "",
     required_data: ["universe"],
-    combinable: false,
+    combinable: true,
     composition_role: "filter",
     components: [],
   },
