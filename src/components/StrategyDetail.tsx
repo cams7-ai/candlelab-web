@@ -5,7 +5,7 @@ import type {
   ParameterSchema,
   Strategy,
 } from "../types";
-import { parameterLabel } from "../utils";
+import { parameterDisplayValue, parameterLabel } from "../utils";
 import { ruleLabel } from "../combinations";
 import {
   strategyPath,
@@ -34,7 +34,14 @@ function ParameterValues({
       {Object.entries(values).map(([key, value]) => (
         <div key={key}>
           <dt>{parameterLabel(key, strategy)}</dt>
-          <dd className="combination-value">{String(value)}</dd>
+          <dd className="combination-value">
+            {String(
+              parameterDisplayValue(
+                value,
+                strategy?.parameters_schema.properties[key],
+              ),
+            )}
+          </dd>
         </div>
       ))}
     </dl>
@@ -130,6 +137,10 @@ function Composition({
 }
 
 function parameterRange(schema: ParameterSchema) {
+  if (schema.enum)
+    return schema.enum
+      .map((value) => parameterDisplayValue(value, schema))
+      .join(" · ");
   const min = schema["x-min"] ?? schema["x-decimal-minimum"] ?? schema.minimum;
   const max = schema["x-max"] ?? schema["x-decimal-maximum"] ?? schema.maximum;
   const exclusiveMin =
@@ -325,7 +336,9 @@ export function StrategyDetail({
                     <dd>
                       {strategy.combinable
                         ? "Disponível"
-                        : "Indisponível: exige uma política de execução própria"}
+                        : strategy.required_data?.length
+                          ? "Indisponível: exige dados auxiliares externos"
+                          : "Indisponível: exige uma política de execução própria"}
                     </dd>
                   </div>
                 </dl>
@@ -357,9 +370,29 @@ export function StrategyDetail({
                               ? "Saída"
                               : "Sinal"}
                         </span>
+                        {component.parameter_overrides && (
+                          <p className="muted">
+                            Configuração da receita:{" "}
+                            {Object.entries(component.parameter_overrides)
+                              .map(([key, value]) => {
+                                const base = query.data?.strategies.find(
+                                  (item) => item.id === component.strategy_id,
+                                );
+                                return `${parameterLabel(key, base)}: ${parameterDisplayValue(value, base?.parameters_schema.properties[key])}`;
+                              })
+                              .join(" · ")}
+                          </p>
+                        )}
                       </li>
                     ))}
                   </ul>
+                  {!!strategy.required_data?.length && (
+                    <p className="muted">
+                      Esta receita depende de dados auxiliares externos e não
+                      pode ser reproduzida na composição livre OHLCV. Use uma
+                      configuração da receita publicada com os dados exigidos.
+                    </p>
+                  )}
                 </section>
               )}
               <section
@@ -398,9 +431,12 @@ export function StrategyDetail({
                             <td>
                               <div className="combination-value">
                                 {String(
-                                  strategy.defaults[key] ??
-                                    schema.default ??
-                                    "Não informado",
+                                  parameterDisplayValue(
+                                    strategy.defaults[key] ??
+                                      schema.default ??
+                                      "Não informado",
+                                    schema,
+                                  ),
                                 )}
                               </div>
                             </td>

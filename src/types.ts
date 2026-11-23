@@ -39,6 +39,8 @@ export interface Session {
   fee_rate: Decimal;
 }
 export interface ParameterSchema {
+  enum?: string[];
+  "x-enum-labels"?: Record<string, string>;
   description?: string;
   contentMediaType?: string;
   "x-min"?: string;
@@ -59,7 +61,11 @@ export interface ParameterSchema {
 }
 export interface Strategy {
   composition_role?: "signal" | "filter" | "exit";
-  components?: { strategy_id: string; role: "signal" | "filter" | "exit" }[];
+  components?: {
+    strategy_id: string;
+    role: "signal" | "filter" | "exit";
+    parameter_overrides?: Record<string, string | number>;
+  }[];
   combinable?: boolean;
   category?: "legacy" | "individual" | "combination";
   rules?: string;

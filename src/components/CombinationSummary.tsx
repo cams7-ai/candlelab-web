@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   combinationParameterLabel,
+  combinationParameterValue,
   combinationParameters,
 } from "../combinations";
 import type { CombinationDefinition, Strategy } from "../types";
@@ -65,7 +66,18 @@ export function CombinationSummary({
                   auxiliary ? "combination-auxiliary" : "combination-value"
                 }
               >
-                {auxiliary ? <AuxiliaryData value={value} /> : String(value)}
+                {auxiliary ? (
+                  <AuxiliaryData value={value} />
+                ) : (
+                  String(
+                    combinationParameterValue(
+                      combination,
+                      key,
+                      value,
+                      strategies,
+                    ),
+                  )
+                )}
               </dd>
             </div>
           );

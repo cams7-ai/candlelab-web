@@ -1,3 +1,4 @@
+import { ParameterSelect } from "./ParameterSelect";
 import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, request, resource } from "../api";
@@ -455,7 +456,21 @@ export function NewRun({
                       ).map(([key, schema]) => (
                         <label key={key}>
                           {parameterLabel(key, strategy)}
-                          {schema.contentMediaType === "application/json" ? (
+                          {schema.enum ? (
+                            <ParameterSelect
+                              label={parameterLabel(key, strategy)}
+                              schema={schema}
+                              value={String(
+                                values[key] ??
+                                  strategy.defaults[key] ??
+                                  schema.default ??
+                                  "",
+                              )}
+                              onChange={(value) =>
+                                setValues({ ...values, [key]: value })
+                              }
+                            />
+                          ) : schema.contentMediaType === "application/json" ? (
                             <>
                               <input
                                 key={strategy.id}
@@ -538,9 +553,11 @@ export function NewRun({
                           <small className="muted">
                             {schema.contentMediaType === "application/json"
                               ? "Lista JSON · snapshot persistido no processamento"
-                              : schema.type === "integer"
-                                ? "Inteiro"
-                                : "Decimal"}
+                              : schema.enum
+                                ? "Opção"
+                                : schema.type === "integer"
+                                  ? "Inteiro"
+                                  : "Decimal"}
                             {schema.description
                               ? ` · ${schema.description}`
                               : ""}

@@ -1,3 +1,4 @@
+import { ParameterSelect } from "./ParameterSelect";
 import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
@@ -101,7 +102,16 @@ export function StrategyConfigurationForm({
               ([key, schema]) => (
                 <label key={key}>
                   {parameterLabel(key, strategy)}
-                  {schema.contentMediaType === "application/json" ? (
+                  {schema.enum ? (
+                    <ParameterSelect
+                      label={parameterLabel(key, strategy)}
+                      schema={schema}
+                      value={String(values[key] ?? schema.default ?? "")}
+                      onChange={(value) =>
+                        setValues({ ...values, [key]: value })
+                      }
+                    />
+                  ) : schema.contentMediaType === "application/json" ? (
                     <>
                       <input
                         type="file"

@@ -1,6 +1,7 @@
 import { Icon } from "./Icon";
 import {
   runParameterLabel,
+  runParameterValue,
   runParameters,
   runStrategyName,
 } from "../combinations";
@@ -485,7 +486,7 @@ export function SessionDetail({
                         <dd>
                           {k === "auxiliary_json"
                             ? `${JSON.parse(String(v)).length} observações importadas`
-                            : format(v)}
+                            : format(runParameterValue(run, k, v, strategies))}
                         </dd>
                       </div>
                     ))}
@@ -548,7 +549,7 @@ export function SessionDetail({
                       {runParameters(r)
                         .map(
                           ([k, v]) =>
-                            `${runParameterLabel(r, k, strategies)}: ${k === "auxiliary_json" ? "snapshot JSON importado" : format(v)}`,
+                            `${runParameterLabel(r, k, strategies)}: ${k === "auxiliary_json" ? "snapshot JSON importado" : format(runParameterValue(r, k, v, strategies))}`,
                         )
                         .join(" · ")}
                     </td>

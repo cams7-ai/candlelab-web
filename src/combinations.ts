@@ -1,4 +1,8 @@
-import { parameterLabel, strategyParameters } from "./utils";
+import {
+  parameterDisplayValue,
+  parameterLabel,
+  strategyParameters,
+} from "./utils";
 import type {
   CombinationDefinition,
   CombinationMember,
@@ -126,11 +130,11 @@ export function runParameters(run: Run): [string, string | number][] {
     : Object.entries(run.parameters);
 }
 
-export function combinationParameterLabel(
+function combinationParameterContext(
   combination: CombinationDefinition,
   key: string,
   strategies: Strategy[],
-): string {
+) {
   const parts = key.split(" · ");
   const prefix: string[] = [];
   let definition: CombinationDefinition | undefined = combination;
@@ -143,13 +147,52 @@ export function combinationParameterLabel(
     definition = member?.combination ?? undefined;
     strategyId = definition?.strategy_id ?? member?.strategy_id ?? null;
   }
+  return {
+    prefix,
+    key: parts.join(" · "),
+    strategy: strategies.find((item) => item.id === strategyId),
+  };
+}
+
+export function combinationParameterLabel(
+  combination: CombinationDefinition,
+  key: string,
+  strategies: Strategy[],
+) {
+  const context = combinationParameterContext(combination, key, strategies);
   return [
-    ...prefix,
-    parameterLabel(
-      parts.join(" · "),
-      strategies.find((item) => item.id === strategyId),
-    ),
+    ...context.prefix,
+    parameterLabel(context.key, context.strategy),
   ].join(" · ");
+}
+
+export function combinationParameterValue(
+  combination: CombinationDefinition,
+  key: string,
+  value: string | number,
+  strategies: Strategy[],
+) {
+  const context = combinationParameterContext(combination, key, strategies);
+  return parameterDisplayValue(
+    value,
+    context.strategy?.parameters_schema.properties[context.key],
+  );
+}
+
+export function runParameterValue(
+  run: Run,
+  key: string,
+  value: string | number,
+  strategies: Strategy[],
+) {
+  const definition = runCombination(run);
+  return definition
+    ? combinationParameterValue(definition, key, value, strategies)
+    : parameterDisplayValue(
+        value,
+        strategies.find((item) => item.id === run.strategy_id)
+          ?.parameters_schema.properties[key],
+      );
 }
 
 export function runParameterLabel(
@@ -172,6 +215,23 @@ export function memberKey(member: CombinationMember): string {
     : member.strategy_id;
 }
 
+export function gridCount(definition: CombinationDefinition): number {
+  const gridIds = ["GRID_TRADING@1", "GRID_ADX_ATR@1"];
+  if (definition.kind !== "custom")
+    return Number(gridIds.includes(definition.strategy_id ?? ""));
+  return definition.members.reduce(
+    (count, member) =>
+      count +
+      (member.combination
+        ? gridCount(member.combination)
+        : Number(gridIds.includes(member.strategy_id))),
+    0,
+  );
+}
+
+export const gridCombinationError =
+  "Use somente uma grade por combinação, incluindo grupos internos.";
+
 export function compositionCompatible(
   definition: CombinationDefinition,
   strategies: Strategy[],
@@ -183,6 +243,7 @@ export function compositionCompatible(
       (s) => s.id === definition.strategy_id && s.combinable,
     );
   return (
+    gridCount(definition) <= 1 &&
     definition.members.length >= 2 &&
     definition.members.every((member) =>
       member.combination

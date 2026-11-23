@@ -9,7 +9,7 @@ import {
   makeSeries,
 } from "./fixtures";
 import type { BinanceInput, Candle, Dataset, Run, Session } from "../types";
-import { memberKey } from "../combinations";
+import { gridCount, gridCombinationError, memberKey } from "../combinations";
 import {
   findConfigurationUsage,
   configurationDeletionBlocked,
@@ -112,8 +112,7 @@ function normalizeCombination(
     const strategy = strategies.find((s) => s.id === definition.strategy_id)!;
     if (
       depth > 1 &&
-      (["DCA@1", "GRID_TRADING@1", "GRID_ADX_ATR@1"].includes(strategy.id) ||
-        strategy.required_data?.length)
+      (["DCA@1"].includes(strategy.id) || strategy.required_data?.length)
     )
       throw new Error(
         "Combinação publicada incompatível com composição Spot OHLCV.",
@@ -151,7 +150,7 @@ function normalizeCombination(
       const strategy = strategies.find((s) => s.id === member.strategy_id);
       if (
         !strategy ||
-        ["DCA@1", "GRID_TRADING@1", "GRID_ADX_ATR@1"].includes(strategy.id) ||
+        ["DCA@1"].includes(strategy.id) ||
         strategy.required_data?.length
       )
         throw new Error("Estratégia incompatível com composição Spot OHLCV.");
@@ -175,6 +174,21 @@ function normalizeCombination(
   )
     throw new Error(
       "Inclua pelo menos uma estratégia de sinal, além de filtros e saídas.",
+    );
+  if (gridCount(definition) > 1) throw new Error(gridCombinationError);
+  if (
+    definition.kind === "custom" &&
+    !gridCount(definition) &&
+    definition.members.some((member) => {
+      const id = member.combination?.strategy_id ?? member.strategy_id;
+      const parameters = member.combination?.parameters ?? member.parameters;
+      return (
+        id === "GRID_REGIME@1" && parameters.regime_action === "disable_grid"
+      );
+    })
+  )
+    throw new Error(
+      "A ação Desativar grade exige uma grade na mesma composição.",
     );
   return definition;
 }
@@ -261,9 +275,7 @@ export const handlers = [
       items: strategies.map((strategy) => ({
         ...strategy,
         combinable:
-          !["DCA@1", "GRID_TRADING@1", "GRID_ADX_ATR@1"].includes(
-            strategy.id,
-          ) && !strategy.required_data?.length,
+          !["DCA@1"].includes(strategy.id) && !strategy.required_data?.length,
       })),
     }),
   ),

@@ -84,7 +84,19 @@ export function binanceInput(
   }
   return input;
 }
+export function parameterDisplayValue(
+  value: string | number,
+  schema?: ParameterSchema,
+) {
+  return schema?.["x-enum-labels"]?.[String(value)] ?? value;
+}
+
 export function parameterValue(value: string, schema: ParameterSchema) {
+  if (schema.enum) {
+    if (!schema.enum.includes(value))
+      throw new Error("Selecione uma opção válida do catálogo.");
+    return value;
+  }
   if (schema.maxLength != null && value.length > schema.maxLength)
     throw new Error("Parâmetro excede o tamanho máximo do catálogo.");
   if (schema.contentMediaType === "application/json") {

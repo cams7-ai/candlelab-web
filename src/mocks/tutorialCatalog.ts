@@ -190,6 +190,34 @@ export const tutorialCatalog: Strategy[] = [
           title: "Levels",
           type: "integer",
         },
+        spacing_mode: {
+          default: "range",
+          description:
+            "Por níveis mantém a grade original; ATR usa o multiplicador de espaçamento.",
+          enum: ["range", "atr"],
+          title: "Modo de espaçamento",
+          type: "string",
+          "x-enum-labels": {
+            atr: "Por ATR",
+            range: "Por níveis",
+          },
+        },
+        atr_period: {
+          default: 14,
+          maximum: 10000,
+          minimum: 1,
+          title: "Atr Period",
+          type: "integer",
+        },
+        atr_multiple: {
+          default: "1",
+          maxLength: 40,
+          pattern: "^-?\\d+(?:\\.\\d+)?$",
+          title: "Espaçamento ATR",
+          type: "string",
+          "x-max": "20",
+          "x-min": "0.1",
+        },
       },
       title: "GRID_TRADINGParameters",
       type: "object",
@@ -198,6 +226,9 @@ export const tutorialCatalog: Strategy[] = [
       stop_pct: "3",
       lookback: 20,
       levels: 5,
+      spacing_mode: "range",
+      atr_period: 14,
+      atr_multiple: "1",
     },
     category: "individual",
     rules:
@@ -205,6 +236,9 @@ export const tutorialCatalog: Strategy[] = [
     limitations:
       "Ordens limitadas simuladas pelo OHLC; sem fila ou fills parciais.",
     required_data: [],
+    combinable: true,
+    composition_role: "signal",
+    components: [],
   },
   {
     id: "BREAKOUT@1",

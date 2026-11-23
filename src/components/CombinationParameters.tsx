@@ -1,4 +1,5 @@
 import type { CombinationMember, ParameterSchema, Strategy } from "../types";
+import { ParameterSelect } from "./ParameterSelect";
 import { parameterLabel } from "../utils";
 
 type ParameterTarget = {
@@ -31,6 +32,8 @@ function fieldsFor(members: CombinationMember[], strategies: Strategy[]) {
           label,
           schema.type,
           schema.contentMediaType,
+          schema.enum,
+          schema["x-enum-labels"],
           scope,
         ]);
         let field = fields.get(id);
@@ -141,7 +144,15 @@ export function CombinationParameters({
             <div key={field.id}>
               <label>
                 {field.label}
-                {schema.contentMediaType === "application/json" ? (
+                {schema.enum ? (
+                  <ParameterSelect
+                    label={field.label}
+                    schema={schema}
+                    value={value}
+                    onChange={change}
+                    describedBy={helpId}
+                  />
+                ) : schema.contentMediaType === "application/json" ? (
                   <textarea
                     required
                     rows={5}

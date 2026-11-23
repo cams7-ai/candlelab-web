@@ -3,6 +3,7 @@ import {
   appendCombinationMembers,
 } from "./CombinationParameters";
 import { CombinationSummary } from "./CombinationSummary";
+import { ParameterSelect } from "./ParameterSelect";
 import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, request } from "../api";
@@ -13,7 +14,13 @@ import type {
   Strategy,
 } from "../types";
 import { parameterLabel, parameterValue } from "../utils";
-import { compositionCompatible, memberKey, ruleLabel } from "../combinations";
+import {
+  compositionCompatible,
+  gridCount,
+  gridCombinationError,
+  memberKey,
+  ruleLabel,
+} from "../combinations";
 import { ErrorNotice, Loading } from "./common";
 import { StrategyPicker } from "./StrategyPicker";
 import { combinationPath, strategyRole } from "../strategies";
@@ -126,6 +133,12 @@ export function Combinations({
       );
       return;
     }
+    if (
+      gridCount({ ...draft, members: [...draft.members, ...additions] }) > 1
+    ) {
+      setError(new Error(gridCombinationError));
+      return;
+    }
     setDraft({
       ...draft,
       members: [...draft.members, ...structuredClone(additions)],
@@ -138,6 +151,8 @@ export function Combinations({
   function addMembers(additions: CombinationMember[]): string | undefined {
     if (draft.members.length + additions.length > 8)
       return "O limite é de 8 membros. Remova um componente para adicionar outro.";
+    if (gridCount({ ...draft, members: [...draft.members, ...additions] }) > 1)
+      return gridCombinationError;
     const keys = new Set(draft.members.map(memberKey));
     for (const member of additions) {
       if (keys.has(memberKey(member)))
@@ -207,7 +222,19 @@ export function Combinations({
             ([key, schema]) => (
               <label key={key}>
                 {parameterLabel(key, strategy)}
-                {schema.contentMediaType === "application/json" ? (
+                {schema.enum ? (
+                  <ParameterSelect
+                    label={parameterLabel(key, strategy)}
+                    schema={schema}
+                    value={String(
+                      values[key] ??
+                        strategy.defaults[key] ??
+                        schema.default ??
+                        "",
+                    )}
+                    onChange={(value) => change(key, value)}
+                  />
+                ) : schema.contentMediaType === "application/json" ? (
                   <textarea
                     required
                     rows={5}
@@ -295,6 +322,7 @@ export function Combinations({
       if (!body.name) throw new Error("Informe o nome da combinação.");
       if (body.kind === "custom" && body.members.length < 2)
         throw new Error("Selecione pelo menos duas estratégias.");
+      if (gridCount(body) > 1) throw new Error(gridCombinationError);
       const saved = await api.saveCombination(body, editing, controller.signal);
       if (controller.signal.aborted) return;
       reset();
@@ -415,10 +443,22 @@ export function Combinations({
                       escolhida, com execução na próxima abertura.
                     </p>
                     <p className="muted">
+                      Com Grid Trading ou Grid + ADX + ATR, use somente uma
+                      grade em toda a combinação, incluindo grupos internos. A
+                      grade mantém preços limite e tamanho das ordens; filtros
+                      controlam as compras. Saídas a mercado não herdam limites
+                      da grade. Stops e desativação da própria grade têm
+                      prioridade sobre a regra de venda e o aquecimento dos
+                      demais componentes. Para reproduzir Grid + ADX + ATR com
+                      componentes individuais, selecione o modo de espaçamento
+                      “Por ATR” em Grid Trading e a ação “Desativar grade” no
+                      Regime de grade ADX.
+                    </p>
+                    <p className="muted">
                       Grupos preservam suas regras e parâmetros em uma cópia:
                       editar ou excluir a origem não altera esta combinação. São
                       permitidos até 4 níveis de grupos e 64 estratégias no
-                      total. Estratégias com dados externos, grade e DCA exigem
+                      total. Estratégias com dados externos e DCA exigem
                       políticas próprias e não estão disponíveis nesta
                       modalidade Spot.
                     </p>

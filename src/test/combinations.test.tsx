@@ -502,17 +502,17 @@ it("reutiliza uma combinação publicada como grupo e mostra seus componentes in
 });
 
 it("não oferece grupos com execução incompatível e recusa combinações sem sinal", async () => {
-  const grid = await api.saveCombination({
-    ...definition("Grade"),
-    kind: "preset",
-    strategy_id: "GRID_ADX_ATR@1",
+  const incompatible = await api.saveCombination({
+    ...definition("DCA salvo"),
+    kind: "strategy",
+    strategy_id: "DCA@1",
     members: [],
   });
   render(<Combinations navigate={vi.fn()} />);
   await userEvent.click(
     await screen.findByRole("button", { name: "Adicionar estratégia" }),
   );
-  expect(screen.getByRole("checkbox", { name: "Grade" })).toBeDisabled();
+  expect(screen.getByRole("checkbox", { name: "DCA salvo" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
   await expect(
     api.saveCombination({
@@ -523,7 +523,9 @@ it("não oferece grupos com execução incompatível e recusa combinações sem 
       ],
     }),
   ).rejects.toThrow(/sinal/);
-  expect((await api.combinations()).map((item) => item.id)).toContain(grid.id);
+  expect((await api.combinations()).map((item) => item.id)).toContain(
+    incompatible.id,
+  );
 });
 
 it("resolve os parâmetros de indicadores dentro de grupos aninhados", () => {
@@ -631,4 +633,87 @@ it("exige resolver valores diferentes de uma combinação salva antes de unifica
       (member) => member.parameters.atr_multiple,
     ),
   ).toEqual(["1.5", "1.5"]);
+});
+
+it("cadastra Grid Trading com filtro ADX e saída ATR e inicia uma execução", async () => {
+  const navigate = vi.fn();
+  const view = render(<Combinations navigate={navigate} />);
+  await userEvent.type(
+    await screen.findByLabelText("Nome da combinação"),
+    "Minha grade ADX ATR",
+  );
+  await addOptions("GRID_TRADING@1", "GRID_REGIME@1", "ATR_EXIT@1");
+  expect(
+    screen.getByRole("button", { name: "Remover Grid Trading" }),
+  ).toBeVisible();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Salvar combinação" }),
+  );
+  await screen.findByText("Combinação “Minha grade ADX ATR” salva.");
+  const saved = (await api.combinations())[0];
+  expect(saved.members.map((member) => member.strategy_id)).toEqual([
+    "GRID_TRADING@1",
+    "GRID_REGIME@1",
+    "ATR_EXIT@1",
+  ]);
+  view.unmount();
+  render(
+    <NewRun id={session.id} combinationId={saved.id} navigate={navigate} />,
+  );
+  await screen.findByRole("button", {
+    name: "Editar parâmetros para esta execução",
+  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Iniciar processamento" }),
+  );
+  await waitFor(() => expect(navigate).toHaveBeenCalled());
+});
+
+it("permite reutilizar uma configuração salva de Grid e bloqueia uma segunda grade", async () => {
+  const saved = await api.saveCombination({
+    name: "Grid Trading (3.25,2)",
+    kind: "strategy",
+    strategy_id: "GRID_TRADING@1",
+    parameters: { stop_pct: "3.25", levels: 2 },
+    members: [],
+    buy_rule: "all",
+    sell_rule: "any",
+  });
+  render(<Combinations navigate={vi.fn()} />);
+  await addOptions(saved.name, "GRID_REGIME@1");
+  expect(
+    screen.getByRole("button", { name: `Remover ${saved.name}` }),
+  ).toBeVisible();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Adicionar estratégia" }),
+  );
+  const dialog = within(
+    screen.getByRole("dialog", { name: "Adicionar estratégia" }),
+  );
+  await userEvent.type(dialog.getByRole("searchbox"), "GRID_ADX_ATR@1");
+  await userEvent.click(dialog.getByRole("checkbox"));
+  await userEvent.click(
+    dialog.getByRole("button", { name: /^Adicionar selecionadas/ }),
+  );
+  expect(dialog.getByRole("alert")).toHaveTextContent("Use somente uma grade");
+});
+
+it("o demo rejeita duas grades em grupos internos mesmo em chamadas diretas", async () => {
+  const group: CombinationDefinition = {
+    ...definition(),
+    name: "Grupo Grid",
+    members: [
+      { strategy_id: "GRID_TRADING@1", parameters: {} },
+      { strategy_id: "GRID_REGIME@1", parameters: {} },
+    ],
+  };
+  await expect(
+    api.saveCombination({
+      ...definition(),
+      members: [
+        { strategy_id: "", parameters: {}, combination: group },
+        { strategy_id: "GRID_ADX_ATR@1", parameters: {} },
+      ],
+    }),
+  ).rejects.toMatchObject({ status: 422 });
 });

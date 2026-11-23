@@ -62,6 +62,18 @@ export const componentCatalog: Strategy[] = [
           "x-max": "100",
           "x-min": "0",
         },
+        regime_action: {
+          default: "filter",
+          description:
+            "Filtrar compras permite retomar. Desativar grade encerra a posição e impede novas compras na grade desta composição.",
+          enum: ["filter", "disable_grid"],
+          title: "Ação ao atingir o ADX máximo",
+          type: "string",
+          "x-enum-labels": {
+            disable_grid: "Desativar grade",
+            filter: "Filtrar compras",
+          },
+        },
       },
       title: "GRID_REGIMEParameters",
       type: "object",
@@ -69,10 +81,11 @@ export const componentCatalog: Strategy[] = [
     defaults: {
       atr_period: 14,
       adx_limit: "20",
+      regime_action: "filter",
     },
     category: "individual",
     rules:
-      "Permite compras com ADX abaixo do limite; na receita de grade desliga a grade ao atingir o limite.",
+      "Permite compras com ADX abaixo do limite; pode desativar permanentemente a grade da composição ao atingir o limite.",
     limitations: "",
     required_data: [],
     combinable: true,
@@ -577,10 +590,12 @@ export const recipeComponents: Record<
     {
       strategy_id: "GRID_TRADING@1",
       role: "signal",
+      parameter_overrides: { spacing_mode: "atr" },
     },
     {
       strategy_id: "GRID_REGIME@1",
       role: "filter",
+      parameter_overrides: { regime_action: "disable_grid" },
     },
   ],
   "MOMENTUM_RANKING@1": [

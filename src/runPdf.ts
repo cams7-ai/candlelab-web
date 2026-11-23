@@ -15,6 +15,7 @@ import {
   datasetName,
   format,
   parameterLabel,
+  parameterDisplayValue,
   rateToPercent,
   utc,
 } from "./utils";
@@ -203,7 +204,13 @@ export function buildRunPdf(report: RunReport) {
               ? "1 observação importada"
               : `${count} observações importadas`;
           })()
-        : format(value),
+        : format(
+            parameterDisplayValue(
+              value,
+              report.strategies?.find((strategy) => strategy.id === strategyId)
+                ?.parameters_schema.properties[key],
+            ),
+          ),
     ]);
     return rows.length ? rows : [["Parâmetros", "Sem parâmetros adicionais."]];
   };
